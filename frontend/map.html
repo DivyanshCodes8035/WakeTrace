@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=18">
+    <link rel="stylesheet" href="styles.css?v=20">
   </head>
   <body>
     <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
@@ -100,7 +100,7 @@
         <div class="simulation-actions"><button id="run-simulation" class="primary-button" type="button" disabled>Choose a point on the map first</button>
           <span id="simulation-status" class="upload-status" role="status" aria-live="polite">The simulated patch, wind/current conditions, and vessel tracks are invented for this exercise.</span></div>
       </details>
-      <section class="map-panel panel map-page-panel" aria-labelledby="map-title">
+      <section id="map-panel" class="map-panel panel map-page-panel" aria-labelledby="map-title">
         <div class="panel-heading map-heading">
           <div><h2 id="map-title">Area of interest</h2><p id="map-description" class="muted">Observed slick boundary and possible drift origin</p></div>
           <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate track</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
@@ -113,6 +113,17 @@
         </div>
         <p id="map-footnote" class="map-footnote">Choose a real scene to view its processed Sentinel-1 radar image. The one-click demo creates its own practice scene and sets the example location automatically.</p>
       </section>
+      <section id="simulation-step" class="panel simulation-step" aria-live="polite" hidden>
+        <div class="simulation-step-copy">
+          <div class="eyebrow">STEP 1 OF 2 · RADAR SCREENING</div>
+          <h2>Inspect the highlighted possible slick</h2>
+          <p class="muted">The map is zoomed to the dark feature found in the generated radar scene. It is a synthetic practice patch, not confirmed oil.</p>
+        </div>
+        <div class="simulation-step-action">
+          <span id="simulation-step-count" class="score-pill"></span>
+          <button id="show-vessel-matches" class="primary-button" type="button">Show possible origin &amp; vessel routes</button>
+        </div>
+      </section>
       <section id="simulation-results" class="panel simulation-results" aria-live="polite" hidden>
         <div class="eyebrow">SIMULATION RESULT · NOT REAL INCIDENT EVIDENCE</div>
         <h2>What the exercise found</h2>
@@ -124,6 +135,6 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="case-data.js"></script>
-    <script src="map-page.js?v=21"></script>
+    <script src="map-page.js?v=23"></script>
   </body>
 </html>

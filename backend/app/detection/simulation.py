@@ -24,7 +24,9 @@ from app.detection.sar import DetectionInputError, detect_sar_dark_features
 def make_offline_practice_scene(seed: int = 42) -> tuple[bytes, list[float]]:
     """Build a deterministic, explicitly synthetic SAR-like raster for offline practice."""
     west, south, east, north = 57.2, -20.8, 58.2, -20.0
-    width = height = 384
+    # Use a finer synthetic grid so a close-up map view stays legible instead
+    # of enlarging visibly blocky radar pixels during the demo.
+    width = height = 1024
     rng = np.random.default_rng(seed)
     rows, columns = np.indices((height, width), dtype=np.float32)
     speckle = rng.normal(0.0, 0.45, size=(height, width)).astype(np.float32)

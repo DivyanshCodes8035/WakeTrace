@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const colors = {
-  slick: { color: "#c97a0a", weight: 3, fillColor: "#e9a933", fillOpacity: 0.42 },
+  slick: { color: "#ffd17d", weight: 3, fillColor: "#f3a642", fillOpacity: 0.16, className: "slick-candidate-outline", smoothFactor: 2.5, lineJoin: "round", lineCap: "round" },
   origin: { color: "#0f7c86", weight: 3, fillColor: "#55b8ad", fillOpacity: 0.3, dashArray: "7 5" },
   track: { color: "#35507a", weight: 3, opacity: 0.9, dashArray: "6 6" },
   secondary: { color: "#b5dcce", weight: 2, fillColor: "#83cbb9", fillOpacity: 0.14, dashArray: "3 5" },
@@ -38,6 +38,47 @@ function fitToCase() {
 
 function apiRoot() {
   return "http://" + (window.location.hostname || "localhost") + ":8002";
+}
+
+function revealVesselResults(result) {
+  addGeometry(result.drift.origin_zone, colors.origin, "Possible origin area from synthetic drift exercise");
+  (result.vessel_candidates || []).forEach((candidate) => addGeometry(candidate.track, colors.track,
+    candidate.vessel_id + " · fictional vessel track"));
+  const source = result.simulation.source_point.coordinates;
+  simulationMarker = L.circleMarker([source[1], source[0]], {
+    radius: 8, color: "#ffffff", weight: 3, fillColor: "#d44d69", fillOpacity: 1,
+  }).bindPopup("Fictional release location planted for this exercise.").addTo(map);
+  $("legend-origin").hidden = !result.drift.origin_zone;
+  $("legend-track").hidden = (result.vessel_candidates || []).length === 0;
+  $("legend-sim-source").hidden = false;
+  $("map-overlay-chip").innerHTML = '<span class="overlay-icon" aria-hidden="true">↶</span> POSSIBLE ORIGIN + FICTIONAL ROUTES';
+  $("simulation-step").hidden = true;
+  $("simulation-results").hidden = false;
+  if (layers?.getLayers().length) {
+    map.fitBounds(layers.getBounds(), { padding: [52, 52], maxZoom: 13, animate: !reduceMotion });
+  }
+
+  const ranked = result.vessel_candidates || [];
+  const truthRank = ranked.findIndex((candidate) => candidate.vessel_id === result.simulation.truth_vessel_id) + 1;
+  $("simulation-summary").textContent = (result.detection.candidates || []).length
+    ? "The screen marked " + result.detection.candidates.length + " possible dark radar feature(s). The outline marks a synthetic patch; darkness alone cannot confirm oil."
+    : "No dark feature met the current screening settings. This exercise did not produce a candidate.";
+  $("simulation-truth").textContent = truthRank
+    ? result.simulation.truth_vessel_id + " was the generated source and ranked #" + truthRank + " in the fictional AIS exercise."
+    : result.simulation.truth_vessel_id + " was the generated source; it was not returned as an AIS candidate in this run.";
+  const vesselList = $("simulation-vessel-list");
+  vesselList.replaceChildren();
+  ranked.forEach((candidate) => {
+    const card = document.createElement("article");
+    card.className = "candidate-card";
+    const heading = document.createElement("div");
+    heading.className = "candidate-card-heading";
+    heading.append(textNode("strong", "#" + candidate.rank + " · " + candidate.vessel_id));
+    heading.append(textNode("span", candidate.priority_score + " / 100", "score-pill"));
+    card.append(heading, textNode("p", "Fictional AIS route · " + candidate.explanation));
+    vesselList.append(card);
+  });
+  $("simulation-results").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
 }
 
 function bboxFromForm(form) {
@@ -498,6 +539,8 @@ $("run-simulation").addEventListener("click", async () => {
     return;
   }
   const button = $("run-simulation");
+  $("simulation-step").hidden = true;
+  $("simulation-results").hidden = true;
   button.disabled = true;
   $("simulation-status").textContent = "Creating the artificial radar patch and screening it… This can take a little while.";
   try {
@@ -525,18 +568,19 @@ $("run-simulation").addEventListener("click", async () => {
     candidates.forEach((candidate, index) => addGeometry(candidate.geometry,
       index === 0 ? colors.slick : colors.secondary,
       "Simulated dark radar feature " + (index + 1) + " · screening candidate, not real oil"));
-    addGeometry(result.drift.origin_zone, colors.origin, "Possible origin area from synthetic drift exercise");
-    (result.vessel_candidates || []).forEach((candidate) => addGeometry(candidate.track, colors.track,
-      candidate.vessel_id + " · fictional vessel track"));
     if (simulationMarker) map.removeLayer(simulationMarker);
-    const source = result.simulation.source_point.coordinates;
-    simulationMarker = L.circleMarker([source[1], source[0]], {
-      radius: 8, color: "#ffffff", weight: 3, fillColor: "#d44d69", fillOpacity: 1,
-    }).bindPopup("Chosen fictional release location.").addTo(map);
+    simulationMarker = null;
     const slick = result.simulation.slick_point.coordinates;
-    simulationSlickMarker = L.circleMarker([slick[1], slick[0]], {
-      radius: 6, color: "#ffffff", weight: 2, fillColor: "#168e9b", fillOpacity: 1,
-    }).bindPopup("Center of the simplified dark patch planted in the copied radar image.").addTo(map);
+    if (simulationSlickMarker) map.removeLayer(simulationSlickMarker);
+    simulationSlickMarker = L.featureGroup([
+      L.circleMarker([slick[1], slick[0]], {
+        radius: 17, color: "#ffc66f", weight: 3, fillColor: "#ffb547", fillOpacity: 0.22,
+        className: "slick-pulse-ring",
+      }),
+      L.circleMarker([slick[1], slick[0]], {
+        radius: 7, color: "#ffffff", weight: 3, fillColor: "#e66a2c", fillOpacity: 1,
+      }).bindPopup("Center of the synthetic dark patch planted for this practice exercise."),
+    ]).addTo(map);
 
     $("case-badge").textContent = isOfflinePractice ? "OFFLINE PRACTICE" : "SIMULATED SPILL";
     $("case-badge").classList.remove("real-case-badge");
@@ -549,8 +593,8 @@ $("run-simulation").addEventListener("click", async () => {
     $("legend-sim-source").hidden = true;
     $("legend-slick").hidden = candidates.length === 0;
     $("legend-dark-features").hidden = candidates.length < 2;
-    $("legend-origin").hidden = !result.drift.origin_zone;
-    $("legend-track").hidden = (result.vessel_candidates || []).length === 0;
+    $("legend-origin").hidden = true;
+    $("legend-track").hidden = true;
     $("legend-scene").hidden = false;
     $("legend-scene").lastChild.textContent = isOfflinePractice ? "Synthetic radar-style background" : "Copernicus Sentinel-1 scene";
     $("scene-source").textContent = result.scene.source + " · " + result.scene.id;
@@ -561,38 +605,24 @@ $("run-simulation").addEventListener("click", async () => {
     $("scene-preview").hidden = false;
     $("scene-preview-status").hidden = true;
     $("map-footnote").textContent = result.detection.note;
-    $("map-description").textContent = "Artificial dark patch · synthetic origin area · fictional vessel routes";
-    $("map-overlay-chip").textContent = "SIMULATED DRIFT ORIGIN";
-    $("legend-sim-source").hidden = false;
+    $("map-description").textContent = "Step 1 · inspect the highlighted synthetic slick candidate";
+    $("map-overlay-chip").innerHTML = '<span class="overlay-icon slick-chip-icon" aria-hidden="true">●</span> POSSIBLE SLICK · SYNTHETIC';
+    $("legend-sim-source").hidden = true;
     $("legend-sim-slick").hidden = false;
     if (incidentMarker) map.removeLayer(incidentMarker);
     incidentMarker = null;
-    map.fitBounds(L.latLngBounds(result.preview.preview_bounds), { padding: [28, 28], maxZoom: 12 });
+    map.flyTo([slick[1], slick[0]], 14, { animate: !reduceMotion, duration: 1.2 });
     $("map-message").hidden = true;
-
-    const ranked = result.vessel_candidates || [];
-    const truthRank = ranked.findIndex((candidate) => candidate.vessel_id === result.simulation.truth_vessel_id) + 1;
-    $("simulation-summary").textContent = candidates.length
-      ? "The radar screen marked " + candidates.length + " possible dark feature(s). Compare the outlines with the planted patch; the screen ranks darkness and size, not oil identity."
-      : "No dark feature met the current screening settings. This exercise did not produce a candidate.";
-    $("simulation-truth").textContent = truthRank
-      ? result.simulation.truth_vessel_id + " was the generated source and ranked #" + truthRank + " in the fictional AIS exercise."
-      : result.simulation.truth_vessel_id + " was the generated source; it was not returned as an AIS candidate in this run.";
-    const vesselList = $("simulation-vessel-list");
-    vesselList.replaceChildren();
-    ranked.forEach((candidate) => {
-      const card = document.createElement("article");
-      card.className = "candidate-card";
-      const heading = document.createElement("div");
-      heading.className = "candidate-card-heading";
-      heading.append(textNode("strong", "#" + candidate.rank + " · " + candidate.vessel_id));
-      heading.append(textNode("span", candidate.priority_score + " / 100", "score-pill"));
-      card.append(heading, textNode("p", "Fictional AIS route · " + candidate.explanation));
-      vesselList.append(card);
-    });
-    $("simulation-results").hidden = false;
+    $("map-message").textContent = candidates.length
+      ? "Possible dark patch highlighted · synthetic exercise only; not confirmed oil."
+      : "No dark feature was detected in this synthetic practice run.";
+    $("map-message").hidden = false;
+    $("simulation-step").hidden = false;
+    $("map-description").textContent = "Step 1 of 2 · inspect the possible dark feature before viewing fictional routes";
+    $("simulation-step-count").textContent = candidates.length + " possible dark feature" + (candidates.length === 1 ? "" : "s");
     $("simulation-panel").hidden = true;
-    $("simulation-results").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    $("map-panel").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    window.pendingSimulationResult = result;
     $("simulation-status").textContent = isOfflinePractice
       ? "Offline practice complete. The background, patch, forcing, and routes are all generated."
       : "Simulation complete. The satellite image is real; the patch, forcing, and routes are fictional.";
@@ -601,6 +631,10 @@ $("run-simulation").addEventListener("click", async () => {
   } finally {
     button.disabled = false;
   }
+});
+
+$("show-vessel-matches").addEventListener("click", () => {
+  if (window.pendingSimulationResult) revealVesselResults(window.pendingSimulationResult);
 });
 
 if (new URLSearchParams(window.location.search).get("demo") === "1") {

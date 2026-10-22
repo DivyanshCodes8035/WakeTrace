@@ -529,6 +529,18 @@ body {
 .real-detection-panel #real-ais-status { margin: 0 22px 18px; }
 .simulation-actions { display: flex; align-items: center; gap: 20px; padding: 0 22px 22px; }
 .simulation-actions .upload-status { margin: 0; }
+.slick-candidate-outline { filter: drop-shadow(0 0 5px rgb(255 173 68 / 90%)); }
+.slick-pulse-ring { filter: drop-shadow(0 0 9px rgb(255 173 68 / 80%)); }
+.slick-chip-icon { color: #ffc36a; text-shadow: 0 0 9px rgb(255 172 67 / 80%); }
+.simulation-step { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin-top: 16px; padding: 20px 24px; border-color: #dbb56f; background: radial-gradient(ellipse at 3% 0%, rgb(239 161 62 / 13%), transparent 52%), linear-gradient(115deg, #102d40, #0a2132); }
+.simulation-step[hidden] { display: none; }
+.simulation-step .eyebrow { color: #ffc36a; }
+.simulation-step h2 { margin: 4px 0; color: #eef7fa; }
+.simulation-step p { max-width: 740px; margin: 0; color: #bfd0d8; }
+.simulation-step-action { display: flex; flex: none; align-items: center; gap: 14px; }
+.simulation-step-action .score-pill { color: #f4c779; background: rgb(255 194 102 / 14%); }
+.simulation-step-action .primary-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px 18px; color: #092332; background: linear-gradient(135deg, #ffd18a, #f4a94e); box-shadow: 0 9px 24px rgb(0 0 0 / 24%); }
+.simulation-step-action .primary-button:hover { background: linear-gradient(135deg, #ffdda5, #ffc16c); }
 .simulation-results { margin-top: 22px; padding: 24px; border-color: #dfbdc7; border-left: 5px solid #c13c50; }
 .simulation-results h2 { margin: 5px 0 8px; }
 .simulation-ground-truth { margin: 16px 0; padding: 14px 16px; color: #183047; background: #fff4df; border: 1px solid #ebce91; border-radius: 10px; }
@@ -538,4 +550,6 @@ body {
   .historical-reference { align-items: flex-start; flex-direction: column; gap: 8px; }
   .reference-coordinate { text-align: left; }
   .simulation-actions { align-items: stretch; flex-direction: column; gap: 10px; padding-right: 14px; padding-left: 14px; }
+  .simulation-step { align-items: flex-start; flex-direction: column; padding: 18px; }
+  .simulation-step-action { align-items: flex-start; flex-direction: column; }
 }
