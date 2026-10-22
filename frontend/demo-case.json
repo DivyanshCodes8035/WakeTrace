@@ -1,0 +1,44 @@
+{
+  "case_id": "synthetic-ui-preview",
+  "title": "Synthetic slick review",
+  "synthetic": true,
+  "detection": {
+    "source": "Synthetic placeholder geometry",
+    "acquired_at": "2024-01-01T12:00:00Z",
+    "confidence": null,
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [[[-0.01, 0.0], [0.01, 0.0], [0.01, 0.01], [-0.01, 0.01], [-0.01, 0.0]]]
+    }
+  },
+  "drift": {
+    "model": "OpenDrift OpenOil 1.14.12",
+    "release_window": {
+      "start": "2024-01-01T06:00:00Z",
+      "end": "2024-01-01T12:00:00Z"
+    },
+    "origin_zone": {
+      "type": "Polygon",
+      "coordinates": [[[-0.03323327377438545, 0.004212453495711088], [-0.032344751060009, -0.002729105530306697], [-0.027932826429605484, -0.005357895512133837], [-0.01792948879301548, -0.007165104150772095], [-0.015051409602165222, -0.005309402476996183], [-0.012385293841362, -0.00304519128985703], [-0.014808248728513718, 0.0056974561884999275], [-0.03323327377438545, 0.004212453495711088]]]
+    },
+    "ensemble_size": 20,
+    "uncertainty_note": "Synthetic example only. The origin area comes from backward particle endpoints under artificial constant forcing. The release window is the configured search horizon, not a measured release time; this result does not identify a vessel or establish responsibility.",
+    "provenance": {
+      "input_sources": [{
+        "provider": "synthetic example only",
+        "dataset": "OpenDrift constant reader",
+        "description": "Invented slick near [0, 0] and artificial constant forcing; wind=(0, 0) m/s, current=(0.12, 0.03) m/s. Not observed data."
+      }],
+      "settings": {
+        "direction": "backward",
+        "backtrack_hours": 6,
+        "time_step_seconds": 900,
+        "ensemble_size_requested": 20,
+        "ensemble_size_returned": 20,
+        "oil_type_assumption": "GENERIC BUNKER C",
+        "random_seed": 42
+      }
+    }
+  },
+  "vessel_candidates": []
+}

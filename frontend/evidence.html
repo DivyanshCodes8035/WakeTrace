@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b2236">
+    <title>WakeTrace | Evidence review</title>
+    <link rel="stylesheet" href="styles.css?v=9">
+  </head>
+  <body>
+    <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
+    <a class="skip-link" href="#main">Skip to evidence review</a>
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="WakeTrace case overview"><span class="brand-mark" aria-hidden="true">≋</span><span>WakeTrace</span></a>
+      <nav class="top-nav" aria-label="Main navigation">
+        <a data-case-link href="index.html">Overview</a>
+        <a data-case-link href="map.html">Map</a>
+        <a class="nav-active" aria-current="page" data-case-link href="evidence.html">Evidence</a>
+      </nav>
+      <div class="header-context"><span class="status-dot" aria-hidden="true"></span> Investigation workspace</div>
+    </header>
+    <main class="page-shell evidence-shell" id="main">
+      <section class="case-heading evidence-heading" aria-labelledby="case-title">
+        <div><div class="eyebrow">EVIDENCE REVIEW <span id="case-badge" class="badge">Loading</span></div><h1 id="case-title">Loading case…</h1><p id="case-subtitle" class="muted">Preparing evidence summary</p></div>
+        <a class="text-link" data-case-link href="map.html">Back to case map <span aria-hidden="true">→</span></a>
+      </section>
+      <div id="case-notice" class="case-notice evidence-notice" role="note" hidden></div>
+      <p class="leads-banner" role="note"><span class="leads-icon" aria-hidden="true">!</span><span><strong>Possible leads only.</strong> Time overlap and proximity are screening clues, not proof that a vessel released oil.</span></p>
+
+      <section class="evidence-grid" aria-label="Drift and source evidence">
+        <article class="panel evidence-card timeline-panel" aria-labelledby="timeline-title">
+          <div class="panel-heading timeline-heading"><div><h2 id="timeline-title">Release search window</h2><p class="muted">Model horizon compared with the observation time · UTC</p></div><span id="timeline-duration" class="timeline-duration">—</span></div>
+          <div class="timeline-track" role="img" aria-label="Release search window ending at slick observation"><div class="timeline-rail"></div><div id="window-bar" class="window-bar"></div><div id="observation-marker" class="timeline-marker"><span class="marker-dot"></span><span class="marker-label">Slick observed</span></div></div>
+          <div class="timeline-labels"><span id="timeline-start">—</span><span id="timeline-end">—</span></div>
+          <p class="small-note">This is the configured search horizon. It is not a measured spill duration or a confirmed release time.</p>
+        </article>
+        <article class="panel evidence-card drift-card" aria-labelledby="drift-title">
+          <div class="panel-heading"><div><h2 id="drift-title">Drift estimate</h2><p id="model-name" class="muted">No model result</p></div></div>
+          <div class="drift-metrics"><div><span class="metric-label">ENSEMBLE</span><strong id="ensemble-size">Unavailable</strong></div><div><span class="metric-label">SEARCH WINDOW</span><strong id="release-window">Unavailable</strong></div></div>
+          <div class="uncertainty-card"><div class="uncertainty-title"><span aria-hidden="true">ⓘ</span> Uncertainty and limitations</div><p id="uncertainty-note">No drift result is available for this case.</p></div>
+        </article>
+        <article class="panel evidence-card sources-card" aria-labelledby="sources-title">
+          <div class="panel-heading"><div><h2 id="sources-title">Input sources</h2><p class="muted">Satellite scene and environmental forcing provenance</p></div></div>
+          <ul id="source-list" class="detail-list"><li class="muted">No source details available</li></ul>
+          <h3 class="subsection-title">Satellite dark-feature screen</h3>
+          <div id="sar-candidate-list" class="candidate-list"><p class="empty-state">No satellite screening result is recorded.</p></div>
+          <h3 class="subsection-title">Simulation settings</h3><dl id="settings-list" class="settings-list"><div><dt>Status</dt><dd>No settings recorded</dd></div></dl>
+        </article>
+        <article class="panel evidence-card vessels-card" aria-labelledby="vessels-title">
+          <div class="panel-heading"><div><h2 id="vessels-title">Vessel screening</h2><p class="muted">AIS candidates supplied for review</p></div><span id="candidate-count" class="candidate-count">0</span></div>
+          <div id="candidate-list" class="candidate-list"><p class="empty-state">No AIS candidates are included in this case.</p></div>
+          <p class="small-note">Missing or sparse AIS data does not prove a vessel was absent. Candidate rankings are not responsibility probabilities.</p>
+        </article>
+      </section>
+      <footer class="page-footer">Review input provenance alongside model outputs. <a data-case-link href="map.html">Open mapped geometries</a>.</footer>
+    </main>
+    <script src="case-data.js"></script>
+    <script src="evidence-page.js"></script>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+{
+  "schema_version": "0.1",
+  "case_id": "demo-001",
+  "title": "Illustrative offshore slick case",
+  "is_synthetic_demo": true,
+  "created_at": "2026-10-15T00:00:00Z",
+  "detection": {
+    "source": "synthetic-demo-data",
+    "acquired_at": "2026-10-10T04:42:00Z",
+    "confidence": 0.72,
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [[[70.0, 18.0], [70.12, 18.0], [70.12, 18.08], [70.0, 18.08], [70.0, 18.0]]]
+    },
+    "note": "Illustrative candidate region only; this is not a real pollution detection."
+  },
+  "drift": {
+    "model": "not-run",
+    "release_window": {
+      "start": "2026-10-09T00:00:00Z",
+      "end": "2026-10-10T04:42:00Z"
+    },
+    "origin_zone": null,
+    "ensemble_size": 0,
+    "uncertainty_note": "Replace with the spread from multiple drift simulations."
+  },
+  "vessel_candidates": [],
+  "provenance": {
+    "environmental_data": [],
+    "ais_data": [],
+    "notes": ["All values in this case are synthetic placeholders for interface development."]
+  }
+}
