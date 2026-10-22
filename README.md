@@ -40,6 +40,10 @@ an internet connection.
 For a one-click local launch on Windows, double-click [`Start WakeTrace.bat`](Start%20WakeTrace.bat)
 in the project folder. It opens the API and website in separate command windows and
 opens the Overview page in your browser. Close those command windows when you are done.
+To present the synthetic workflow, click **Run one-click demo** on Overview. It generates
+a radar-style practice scene, inserts and screens a fictional dark patch, estimates a
+possible origin, and ranks invented vessel tracks without asking for coordinates. This is
+not real satellite imagery or evidence about a real spill or vessel.
 
 ## Search and show live satellite scenes
 

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=17">
+    <link rel="stylesheet" href="styles.css?v=18">
   </head>
   <body>
     <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
@@ -59,8 +59,8 @@
         </form>
         <div id="scene-results" class="scene-results" aria-live="polite"></div>
         <div class="offline-practice-callout">
-          <div><strong>Want to see the workflow now?</strong><p class="muted">Run a no-login practice exercise with a generated radar-style image. It is not satellite data.</p></div>
-          <button id="start-offline-practice" class="secondary-button" type="button">Start offline practice</button>
+          <div><strong>One-click synthetic demo</strong><p class="muted">Uses a generated radar-style image and fixed example location. No coordinates or account needed; this is not satellite data.</p></div>
+          <button id="start-offline-practice" class="secondary-button" type="button">Run simulated case</button>
         </div>
       </section>
       <section id="real-detection-results" class="panel real-detection-panel" aria-labelledby="real-detection-title" hidden>
@@ -111,7 +111,7 @@
           <button id="fit-button" class="map-button" type="button">Fit to case</button>
           <div id="map-message" class="map-message" role="status" aria-live="polite">Loading map…</div>
         </div>
-        <p id="map-footnote" class="map-footnote">Choose a real scene above to display its processed Sentinel-1 image. The grayscale image is radar backscatter, not a photograph. Coordinates use GeoJSON [longitude, latitude].</p>
+        <p id="map-footnote" class="map-footnote">Choose a real scene to view its processed Sentinel-1 radar image. The one-click demo creates its own practice scene and sets the example location automatically.</p>
       </section>
       <section id="simulation-results" class="panel simulation-results" aria-live="polite" hidden>
         <div class="eyebrow">SIMULATION RESULT · NOT REAL INCIDENT EVIDENCE</div>
@@ -124,6 +124,6 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="case-data.js"></script>
-    <script src="map-page.js?v=20"></script>
+    <script src="map-page.js?v=21"></script>
   </body>
 </html>

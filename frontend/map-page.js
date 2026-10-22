@@ -168,7 +168,7 @@ $("auto-find-scene").addEventListener("click", () => {
   searchForm.requestSubmit();
 });
 
-$("start-offline-practice").addEventListener("click", () => {
+function startOfflinePractice() {
   selectedScene = { id: "OFFLINE-SYNTHETIC-PRACTICE", synthetic: true };
   selectedSceneBounds = [57.2, -20.8, 58.2, -20.0];
   window.simulationSourcePoint = { longitude: 57.7, latitude: -20.4 };
@@ -178,7 +178,9 @@ $("start-offline-practice").addEventListener("click", () => {
   $("run-simulation").disabled = false;
   $("run-simulation").textContent = "Run offline practice";
   $("run-simulation").click();
-});
+}
+
+$("start-offline-practice").addEventListener("click", startOfflinePractice);
 
 searchForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -600,3 +602,7 @@ $("run-simulation").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+
+if (new URLSearchParams(window.location.search).get("demo") === "1") {
+  startOfflinePractice();
+}
