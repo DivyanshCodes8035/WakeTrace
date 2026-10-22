@@ -605,24 +605,42 @@ $("run-simulation").addEventListener("click", async () => {
     $("scene-preview").hidden = false;
     $("scene-preview-status").hidden = true;
     $("map-footnote").textContent = result.detection.note;
-    $("map-description").textContent = "Step 1 · inspect the highlighted synthetic slick candidate";
-    $("map-overlay-chip").innerHTML = '<span class="overlay-icon slick-chip-icon" aria-hidden="true">●</span> POSSIBLE SLICK · SYNTHETIC';
+    $("map-description").textContent = "Step 1 · full-scene synthetic radar overview";
+    $("map-overlay-chip").innerHTML = '<span class="overlay-icon" aria-hidden="true">◉</span> SYNTHETIC RADAR OVERVIEW';
     $("legend-sim-source").hidden = true;
     $("legend-sim-slick").hidden = false;
     if (incidentMarker) map.removeLayer(incidentMarker);
     incidentMarker = null;
-    map.flyTo([slick[1], slick[0]], 14, { animate: !reduceMotion, duration: 1.2 });
     $("map-message").hidden = true;
     $("map-message").textContent = candidates.length
-      ? "Possible dark patch highlighted · synthetic exercise only; not confirmed oil."
+      ? "Full radar scene · zooming to the synthetic patch in 2 seconds."
       : "No dark feature was detected in this synthetic practice run.";
     $("map-message").hidden = false;
     $("simulation-step").hidden = false;
-    $("map-description").textContent = "Step 1 of 2 · inspect the possible dark feature before viewing fictional routes";
-    $("simulation-step-count").textContent = candidates.length + " possible dark feature" + (candidates.length === 1 ? "" : "s");
+    $("map-description").textContent = "Step 1 · full-scene view, then a close-up of the synthetic patch";
+    $("simulation-step-title").textContent = "Full-scene radar overview";
+    $("simulation-step-copy").textContent = "A generated Sentinel-1-style radar view is shown first. In two seconds, WakeTrace zooms to the planted practice patch. This is not actual satellite imagery.";
+    $("simulation-step-count").textContent = "";
+    $("show-vessel-matches").disabled = true;
+    $("show-vessel-matches").textContent = "Zooming to patch…";
     $("simulation-panel").hidden = true;
     $("map-panel").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    map.fitBounds(L.latLngBounds(result.preview.preview_bounds), { padding: [28, 28], maxZoom: 11 });
     window.pendingSimulationResult = result;
+    window.setTimeout(() => {
+      if (window.pendingSimulationResult !== result) return;
+      map.flyTo([slick[1], slick[0]], 14, { animate: !reduceMotion, duration: 1.2 });
+      $("map-description").textContent = "Step 1 of 2 · inspect the highlighted possible dark feature";
+      $("map-overlay-chip").innerHTML = '<span class="overlay-icon slick-chip-icon" aria-hidden="true">●</span> POSSIBLE SLICK · SYNTHETIC';
+      $("map-message").textContent = candidates.length
+        ? "Possible dark patch highlighted · synthetic exercise only; not confirmed oil."
+        : "No dark feature was detected in this synthetic practice run.";
+      $("simulation-step-title").textContent = "Inspect the highlighted possible slick";
+      $("simulation-step-copy").textContent = "The map has zoomed to the dark feature found in the generated radar scene. It is a synthetic practice patch, not confirmed oil.";
+      $("simulation-step-count").textContent = candidates.length + " possible dark feature" + (candidates.length === 1 ? "" : "s");
+      $("show-vessel-matches").disabled = false;
+      $("show-vessel-matches").textContent = "Show possible origin & vessel routes";
+    }, 2000);
     $("simulation-status").textContent = isOfflinePractice
       ? "Offline practice complete. The background, patch, forcing, and routes are all generated."
       : "Simulation complete. The satellite image is real; the patch, forcing, and routes are fictional.";

@@ -116,12 +116,12 @@
       <section id="simulation-step" class="panel simulation-step" aria-live="polite" hidden>
         <div class="simulation-step-copy">
           <div class="eyebrow">STEP 1 OF 2 · RADAR SCREENING</div>
-          <h2>Inspect the highlighted possible slick</h2>
-          <p class="muted">The map is zoomed to the dark feature found in the generated radar scene. It is a synthetic practice patch, not confirmed oil.</p>
+          <h2 id="simulation-step-title">Full-scene radar overview</h2>
+          <p id="simulation-step-copy" class="muted">The generated Sentinel-1-style radar view appears first, then zooms to the planted practice patch. It is not satellite data.</p>
         </div>
         <div class="simulation-step-action">
           <span id="simulation-step-count" class="score-pill"></span>
-          <button id="show-vessel-matches" class="primary-button" type="button">Show possible origin &amp; vessel routes</button>
+          <button id="show-vessel-matches" class="primary-button" type="button" disabled>Zooming to patch…</button>
         </div>
       </section>
       <section id="simulation-results" class="panel simulation-results" aria-live="polite" hidden>
@@ -135,6 +135,6 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="case-data.js"></script>
-    <script src="map-page.js?v=23"></script>
+    <script src="map-page.js?v=24"></script>
   </body>
 </html>
