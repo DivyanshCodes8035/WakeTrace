@@ -58,7 +58,10 @@ async def search_gfw_presence(drift: dict[str, Any]) -> dict[str, Any]:
     params = {
         "spatial-resolution": "HIGH",
         "temporal-resolution": "DAILY",
-        "spatial-aggregation": "true",
+        # Keep individual grid cells so the response contains lon/lat rows.
+        # With spatial aggregation enabled GFW can return one area-wide total,
+        # which this map layer cannot place and would incorrectly look empty.
+        "spatial-aggregation": "false",
         "group-by": "VESSEL_ID",
         "datasets[0]": GFW_DATASET,
         "date-range": f"{start_day.isoformat()},{(end_day + timedelta(days=1)).isoformat()}",
@@ -74,32 +77,57 @@ async def search_gfw_presence(drift: dict[str, Any]) -> dict[str, Any]:
             )
     except httpx.TimeoutException as exc:
         raise AISPresenceError("Global Fishing Watch took too long to return AIS presence. Try again shortly.") from exc
+    except httpx.ConnectError as exc:
+        raise AISPresenceError(
+            "WakeTrace could not resolve or connect to the Global Fishing Watch API. "
+            "Check this computer's internet, DNS, or proxy connection, then retry."
+        ) from exc
     except httpx.RequestError as exc:
         raise AISPresenceError("WakeTrace could not connect to Global Fishing Watch. Check internet access and try again.") from exc
 
     if response.status_code == 401:
-        raise AISPresenceError("Global Fishing Watch rejected the API token. Check GFW_API_TOKEN in the project-root .env.")
+        raise AISPresenceError(
+            "Global Fishing Watch API token was rejected (HTTP 401). "
+            "Copy a fresh token from the Global Fishing Watch API Tokens page into "
+            "GFW_API_TOKEN in the project-root .env, then restart the backend. "
+            "Do not use your account password."
+        )
     if response.status_code == 403:
         raise AISPresenceError("This Global Fishing Watch token does not have access to the AIS presence report.")
     if response.status_code == 429:
         raise AISPresenceError("Global Fishing Watch is already processing a report for this token. Wait briefly and retry.")
+    if response.status_code == 503:
+        raise AISPresenceError(
+            "Global Fishing Watch's report service is temporarily unavailable (HTTP 503). "
+            "WakeTrace reached GFW; retry later. This is not a token rejection."
+        )
     if response.status_code >= 400:
-        raise AISPresenceError(f"Global Fishing Watch returned HTTP {response.status_code}. Check the area, dates, and API token.")
+        raise AISPresenceError(
+            f"Global Fishing Watch rejected this report request (HTTP {response.status_code}). "
+            "Check the area, dates, and token access."
+        )
     try:
         payload = response.json()
     except ValueError as exc:
         raise AISPresenceError("Global Fishing Watch returned an unreadable report.") from exc
 
-    entries: list[dict[str, Any]] = []
-    if isinstance(payload, dict):
-        raw_entries = payload.get("entries", [])
-        if isinstance(raw_entries, list):
-            for group in raw_entries:
-                if not isinstance(group, dict):
-                    continue
-                rows = group.get(GFW_DATASET, [])
-                if isinstance(rows, list):
-                    entries.extend(row for row in rows if isinstance(row, dict))
+    raw_entries: Any = payload.get("entries", []) if isinstance(payload, dict) else []
+
+    def _rows_with_coordinates(value: Any) -> list[dict[str, Any]]:
+        """Read flat or dataset-nested 4Wings rows without relying on a version key."""
+        if isinstance(value, list):
+            return [row for item in value for row in _rows_with_coordinates(item)]
+        if not isinstance(value, dict):
+            return []
+        if "lon" in value and "lat" in value:
+            return [value]
+        return [row for nested in value.values() for row in _rows_with_coordinates(nested)]
+
+    entries = _rows_with_coordinates(raw_entries)
+    if not isinstance(raw_entries, list):
+        raw_entry_count = 1 if raw_entries else 0
+    else:
+        raw_entry_count = len(raw_entries)
 
     presences = []
     for row in entries:
@@ -139,8 +167,19 @@ async def search_gfw_presence(drift: dict[str, Any]) -> dict[str, Any]:
             "query_geometry": origin,
             "query_start_date": start_day.isoformat(),
             "query_end_date_exclusive": (end_day + timedelta(days=1)).isoformat(),
+            "spatial_resolution": "HIGH",
             "spatial_resolution_degrees": 0.01,
+            "spatial_aggregation": False,
             "temporal_resolution": "DAILY",
+            "group_by": "VESSEL_ID",
+            "upstream_total": payload.get("total") if isinstance(payload, dict) else None,
+            "upstream_entries_received": raw_entry_count,
+            "upstream_coordinate_rows_received": len(entries),
+            "upstream_dataset_keys": sorted({
+                str(key)
+                for item in raw_entries if isinstance(raw_entries, list) and isinstance(item, dict)
+                for key in item.keys() if isinstance(key, str) and key.startswith("public-")
+            }) if isinstance(raw_entries, list) else [],
         },
         "note": (
             "AIS presence leads from Global Fishing Watch, aggregated into approximately 0.01° grid cells by day. "

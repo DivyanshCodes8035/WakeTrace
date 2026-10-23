@@ -69,10 +69,41 @@ function renderSettings(settings = {}) {
   list.replaceChildren();
   const entries = Object.entries(settings);
   if (!entries.length) entries.push(["Status", "No simulation settings recorded"]);
+  const explanations = {
+    "algorithm": "The image-screening steps used to find unusually dark connected areas.",
+    "backscatter units expected": "Radar brightness unit expected by the image screen.",
+    "polarization": "The orientation of the radar signal used to make this image.",
+    "band": "Which radar image layer was read.",
+    "dark percentile": "How dark a pixel must be compared with other usable pixels to be screened.",
+    "minimum contrast db": "The minimum radar-brightness difference required to keep a dark feature.",
+    "minimum component pixels": "The minimum number of connected image pixels needed to keep a feature.",
+    "maximum candidates": "The largest number of dark features the screen will return.",
+    "water mask used": "Whether a separate land/water mask was used.",
+    "valid pixel count": "How many usable image pixels were checked.",
+    "dark threshold db": "The radar-brightness cutoff used to mark dark pixels.",
+    "scene median db": "The middle radar-brightness value in the scene, used as a comparison.",
+    "connected components before filtering": "The number of joined dark areas found before small or weak ones were removed.",
+    "candidates returned": "How many dark areas remained for review.",
+    "direction": "Whether the model moves forward or backward in time.",
+    "duration hours": "The length of the modeled time period.",
+    "ensemble size": "How many slightly varied sample paths were used to illustrate spread.",
+    "wind east m s": "Eastward wind component used by the model, in metres per second.",
+    "wind north m s": "Northward wind component used by the model, in metres per second.",
+    "current east m s": "Eastward ocean-current component used by the model, in metres per second.",
+    "current north m s": "Northward ocean-current component used by the model, in metres per second.",
+    "random seed": "A repeatable starting number so this synthetic example can be generated the same way again.",
+    "method": "The calculation method used; compare this with the model name and recorded data sources."
+  };
   entries.forEach(([key, value]) => {
     const row = document.createElement("div");
-    row.append(addTextElement("dt", key.replaceAll("_", " ")));
-    row.append(addTextElement("dd", typeof value === "object" ? JSON.stringify(value) : String(value)));
+    const readableKey = key.replaceAll("_", " ");
+    const shortKey = readableKey.split(" · ").pop().toLowerCase();
+    row.append(addTextElement("dt", readableKey));
+    const definition = document.createElement("dd");
+    definition.append(document.createTextNode(typeof value === "object" ? JSON.stringify(value) : String(value)));
+    const explanation = explanations[shortKey];
+    if (explanation) definition.append(addTextElement("small", explanation));
+    row.append(definition);
     list.append(row);
   });
 }
@@ -104,9 +135,11 @@ WakeTraceCase.load()
     WakeTraceCase.markSynthetic(caseData);
     const detection = caseData.detection || {};
     const drift = caseData.drift || {};
-    document.title = "WakeTrace | Evidence | " + (caseData.case_id || "Case");
+    document.title = "WakeTrace | Evidence | " + (caseData.title || caseData.case_id || "Case");
     $("case-title").textContent = caseData.title || caseData.case_id || "Untitled case";
-    $("case-subtitle").textContent = "Case " + (caseData.case_id || "ID unavailable") + " · Observation " + WakeTraceCase.formatUtc(detection.acquired_at);
+    $("case-subtitle").textContent = caseData.practice_result
+      ? "Generated practice run · Observation " + WakeTraceCase.formatUtc(detection.acquired_at)
+      : "Case " + (caseData.case_id || "ID unavailable") + " · Observation " + WakeTraceCase.formatUtc(detection.acquired_at);
     $("model-name").textContent = drift.model && drift.model !== "not-run" ? drift.model : "No drift simulation available";
     $("ensemble-size").textContent = Number.isFinite(drift.ensemble_size) && drift.ensemble_size > 0
       ? drift.ensemble_size + " particles" : "Unavailable";

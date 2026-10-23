@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=20">
+    <link rel="stylesheet" href="styles.css?v=22">
   </head>
   <body>
     <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
@@ -57,6 +57,10 @@
           <button class="primary-button" type="submit">Search Copernicus</button>
           <p id="upload-status" class="upload-status" role="status" aria-live="polite">First move and zoom the map to the real area. Automatic search uses that map area and the latest 32 days; it finds imagery, not spills.</p>
         </form>
+        <div class="coordinate-save-row">
+          <p id="coordinate-save-status" class="coordinate-save-status" role="status" aria-live="polite">Your search coordinates are saved automatically on this device.</p>
+          <button id="clear-saved-coordinates" class="text-button" type="button">Clear saved coordinates</button>
+        </div>
         <div id="scene-results" class="scene-results" aria-live="polite"></div>
         <div class="offline-practice-callout">
           <div><strong>One-click synthetic demo</strong><p class="muted">Uses a generated radar-style image and fixed example location. No coordinates or account needed; this is not satellite data.</p></div>
@@ -112,6 +116,19 @@
           <div><h2 id="map-title">Area of interest</h2><p id="map-description" class="muted">Observed slick boundary and possible drift origin</p></div>
           <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate track</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
         </div>
+        <details class="plain-help map-help">
+          <summary>What do the map symbols and terms mean?</summary>
+          <div class="help-grid">
+            <p><i class="legend-swatch slick"></i><strong>Amber outline:</strong> a possible dark radar feature selected for review. It is not proof of oil.</p>
+            <p><i class="legend-swatch origin"></i><strong>Teal dashed area:</strong> a possible origin area estimated by the drift model. Its size shows uncertainty.</p>
+            <p><i class="legend-swatch track"></i><strong>Blue dashed line:</strong> a vessel route to compare with the time and area. It is a lead, not an accusation.</p>
+            <p><i class="legend-swatch simulated-source-swatch"></i><strong>Pink point:</strong> in practice mode, the invented release point used to check whether the exercise works.</p>
+            <p><i class="legend-swatch simulated-slick-swatch"></i><strong>Teal center:</strong> the planted center of the practice patch, not a measured oil location.</p>
+            <p><strong>Coordinates:</strong> choose an area to search. GeoJSON positions are written longitude first, then latitude; coordinates do not tell WakeTrace where a spill happened.</p>
+            <p><strong>Radar image:</strong> grayscale radar brightness, not a normal camera photo. Some dark areas can look like oil but have other causes.</p>
+            <p><strong>AIS:</strong> ship-position messages. Coverage can be incomplete, and some results are approximate daily areas.</p>
+          </div>
+        </details>
         <div class="map-stage map-page-stage">
           <div id="map" role="region" aria-label="Interactive map showing case geometries"></div>
           <div id="map-overlay-chip" class="map-overlay-chip"><span class="overlay-icon" aria-hidden="true">↶</span> DRIFT ORIGIN ESTIMATE</div>
@@ -141,7 +158,7 @@
       <footer class="page-footer">No geometry is invented when case data is missing. <a data-case-link href="evidence.html">Review evidence and limitations</a>.</footer>
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="case-data.js"></script>
-    <script src="map-page.js?v=24"></script>
+    <script src="case-data.js?v=2"></script>
+    <script src="map-page.js?v=27"></script>
   </body>
 </html>

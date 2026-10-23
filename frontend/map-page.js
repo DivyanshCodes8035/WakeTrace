@@ -81,6 +81,41 @@ function revealVesselResults(result) {
   $("simulation-results").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
 }
 
+function savePracticeResultForEvidence(result) {
+  const sceneTime = result.scene?.datetime || result.detection?.acquired_at || new Date().toISOString();
+  const detection = { ...result.detection };
+  delete detection.preview_url;
+  const caseData = {
+    practice_result: true,
+    synthetic: true,
+    case_id: "practice-session",
+    title: "One-click simulated spill exercise",
+    synthetic_notice: result.simulation?.note || "Synthetic practice only. Results are generated for demonstration and are not real incident evidence.",
+    detection: {
+      ...detection,
+      acquired_at: sceneTime,
+      provenance: {
+        ...(detection.provenance || {}),
+        input_sources: [{
+          provider: result.scene?.source || "Synthetic practice generator",
+          dataset: result.scene?.id || "Generated radar-style scene",
+          description: result.simulation?.background_label === "Synthetic radar-style"
+            ? "Generated practice background; not satellite imagery."
+            : result.simulation?.background_label || "Generated practice background; not satellite imagery.",
+        }],
+      },
+    },
+    drift: result.drift,
+    vessel_candidates: result.vessel_candidates || [],
+    simulation: result.simulation,
+  };
+  try {
+    sessionStorage.setItem("waketrace.practice-result.v1", JSON.stringify(caseData));
+  } catch (error) {
+    console.warn("Could not save the practice result for Evidence", error);
+  }
+}
+
 function bboxFromForm(form) {
   return ["west", "south", "east", "north"].map((name) => Number(form.elements[name].value));
 }
@@ -162,7 +197,7 @@ WakeTraceCase.load()
   .then((caseData) => {
     WakeTraceCase.markSynthetic(caseData);
     const detection = caseData.detection || {};
-    document.title = "WakeTrace | Map | " + (caseData.case_id || "Case");
+    document.title = "WakeTrace | Map | " + (caseData.title || caseData.case_id || "Case");
     $("case-title").textContent = caseData.title || caseData.case_id || "Untitled case";
     $("case-subtitle").textContent = "Observation · " + WakeTraceCase.formatUtc(detection.acquired_at);
     const inputSource = detection.provenance?.input_sources?.[0] || {};
@@ -202,6 +237,49 @@ WakeTraceCase.load()
   });
 
 const searchForm = $("scene-search-form");
+const savedCoordinatesKey = "waketrace.map-search-coordinates.v1";
+const coordinateFields = ["west", "south", "east", "north"];
+const coordinateSaveStatus = $("coordinate-save-status");
+
+try {
+  const savedCoordinates = JSON.parse(localStorage.getItem(savedCoordinatesKey) || "{}");
+  coordinateFields.forEach((name) => {
+    const value = savedCoordinates[name];
+    if (typeof value === "string" && value.trim() !== "") searchForm.elements[name].value = value;
+  });
+  if (coordinateFields.some((name) => searchForm.elements[name].value)) {
+    coordinateSaveStatus.textContent = "Saved coordinates restored from this device.";
+  }
+} catch (error) {
+  coordinateSaveStatus.textContent = "Automatic coordinate saving is unavailable in this browser.";
+}
+
+function saveSearchCoordinates() {
+  try {
+    const values = Object.fromEntries(coordinateFields.map((name) => [name, searchForm.elements[name].value]));
+    if (coordinateFields.every((name) => values[name] === "")) {
+      localStorage.removeItem(savedCoordinatesKey);
+      coordinateSaveStatus.textContent = "Enter coordinates and WakeTrace will save them on this device.";
+      return;
+    }
+    localStorage.setItem(savedCoordinatesKey, JSON.stringify(values));
+    coordinateSaveStatus.textContent = "Coordinates saved automatically on this device.";
+  } catch (error) {
+    coordinateSaveStatus.textContent = "Could not save coordinates in this browser.";
+  }
+}
+
+coordinateFields.forEach((name) => searchForm.elements[name].addEventListener("input", saveSearchCoordinates));
+$("clear-saved-coordinates").addEventListener("click", () => {
+  coordinateFields.forEach((name) => { searchForm.elements[name].value = ""; });
+  try {
+    localStorage.removeItem(savedCoordinatesKey);
+    coordinateSaveStatus.textContent = "Saved coordinates cleared from this device.";
+  } catch (error) {
+    coordinateSaveStatus.textContent = "Could not clear saved coordinates in this browser.";
+  }
+});
+
 $("use-map-bounds").addEventListener("click", () => {
   if (!map) {
     $("upload-status").textContent = "The map is not available yet.";
@@ -214,6 +292,7 @@ $("use-map-bounds").addEventListener("click", () => {
   Object.entries(values).forEach(([name, value]) => {
     searchForm.elements[name].value = value.toFixed(4);
   });
+  saveSearchCoordinates();
   $("upload-status").textContent = "Search area copied from the current map view. Set real dates, then search.";
 });
 
@@ -237,6 +316,7 @@ $("auto-find-scene").addEventListener("click", () => {
   Object.entries(values).forEach(([name, value]) => {
     searchForm.elements[name].value = value.toFixed(4);
   });
+  saveSearchCoordinates();
   const end = new Date();
   const start = new Date(end.getTime() - 31 * 24 * 60 * 60 * 1000);
   searchForm.elements.end_date.value = end.toISOString().slice(0, 10);
@@ -591,9 +671,13 @@ async function searchAutomaticAISPresence(drift) {
       }
     });
     window.realCaseData.ais_presence = result;
-    status.textContent = result.presence_cells.length
-      ? result.presence_cells.length + " aggregated AIS presence cell(s) found. " + result.note
-      : "No AIS vessel-presence cells were returned for this area and date range. That does not prove no vessels were present. " + result.note;
+    if (result.presence_cells.length) {
+      status.textContent = result.presence_cells.length + " AIS presence cell(s) returned by Global Fishing Watch. " + result.note;
+    } else if (result.provenance?.upstream_entries_received > 0 && result.provenance?.upstream_coordinate_rows_received === 0) {
+      status.textContent = "Global Fishing Watch returned report entries, but WakeTrace could not read their map coordinates. Refresh the backend before retrying. " + result.note;
+    } else {
+      status.textContent = "Global Fishing Watch returned no AIS presence rows for this area and date range. That does not prove vessels were absent. " + result.note;
+    }
   } catch (error) {
     status.replaceChildren(document.createTextNode(error.message + " "));
     if (error.message.includes("Global Fishing Watch API token")) {
@@ -725,6 +809,7 @@ $("run-simulation").addEventListener("click", async () => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "The simulated exercise could not run.");
+    savePracticeResultForEvidence(result);
 
     if (sceneOverlay) map.removeLayer(sceneOverlay);
     sceneOverlay = L.imageOverlay(result.preview.preview_url, result.preview.preview_bounds, { opacity: 0.94 }).addTo(map);

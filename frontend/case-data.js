@@ -6,10 +6,20 @@
     : new URL("demo-case.json", window.location.href);
 
   window.WakeTraceCase = {
-    load: () => fetch(caseUrl).then((response) => {
+    load: () => {
+      if (params.get("demo") === "1") {
+        try {
+          const practiceCase = JSON.parse(sessionStorage.getItem("waketrace.practice-result.v1") || "null");
+          if (practiceCase && practiceCase.practice_result === true) return Promise.resolve(practiceCase);
+        } catch (error) {
+          console.warn("Could not restore the current practice result", error);
+        }
+      }
+      return fetch(caseUrl).then((response) => {
       if (!response.ok) throw new Error("Could not load case data (" + response.status + ")");
       return response.json();
-    }),
+      });
+    },
     formatUtc(value) {
       if (!value) return "Not available";
       const date = new Date(value);
@@ -20,10 +30,10 @@
       }).format(date) + " UTC";
     },
     markCaseLinks(caseData) {
-      if (!requestedCase) return;
       document.querySelectorAll("[data-case-link]").forEach((link) => {
         const url = new URL(link.href, window.location.href);
-        url.searchParams.set("case", caseData.case_id || requestedCase);
+        if (requestedCase) url.searchParams.set("case", caseData.case_id || requestedCase);
+        if (params.get("demo") === "1") url.searchParams.set("demo", "1");
         link.href = url.pathname.split("/").pop() + url.search;
       });
     },
@@ -31,12 +41,14 @@
       const synthetic = caseData.synthetic === true || caseData.is_synthetic_demo === true;
       const badge = document.getElementById("case-badge");
       if (badge) {
-        badge.textContent = synthetic ? "SYNTHETIC EXAMPLE" : "CASE DATA";
+        badge.textContent = caseData.practice_result ? "SYNTHETIC PRACTICE" : synthetic ? "SYNTHETIC EXAMPLE" : "CASE DATA";
         badge.classList.toggle("real-case-badge", !synthetic);
       }
       const notice = document.getElementById("case-notice");
       if (notice) {
-        notice.textContent = synthetic
+        notice.textContent = caseData.practice_result
+          ? caseData.synthetic_notice
+          : synthetic
           ? "Synthetic example only. Geometry, timing, and environmental forcing are placeholders, not observations from a real spill."
           : "Review source provenance and uncertainty before interpreting this case.";
         notice.hidden = false;

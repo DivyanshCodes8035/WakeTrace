@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Evidence review</title>
-    <link rel="stylesheet" href="styles.css?v=9">
+    <link rel="stylesheet" href="styles.css?v=12">
   </head>
   <body>
     <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
@@ -27,9 +27,22 @@
       <div id="case-notice" class="case-notice evidence-notice" role="note" hidden></div>
       <p class="leads-banner" role="note"><span class="leads-icon" aria-hidden="true">!</span><span><strong>Possible leads only.</strong> Time overlap and proximity are screening clues, not proof that a vessel released oil.</span></p>
 
+      <details class="plain-help evidence-help">
+        <summary>Plain-language guide to this page</summary>
+        <div class="help-grid">
+          <p><strong>UTC:</strong> one shared world time standard, so satellite and ship times can be compared fairly.</p>
+          <p><strong>Release search window:</strong> the period the model checked backward from the image time. It is not a confirmed spill time.</p>
+          <p><strong>Ensemble / particles:</strong> many slightly varied model paths. Their spread shows how uncertain the origin estimate is.</p>
+          <p><strong>Dark-feature score:</strong> a screening priority based on image appearance, not the chance that the patch is oil.</p>
+          <p><strong>AIS candidate score:</strong> a sorting aid based on the available position data, not a probability of guilt.</p>
+          <p><strong>Input sources and settings:</strong> records of which data and model choices produced the displayed result, for review and replay.</p>
+          <p><strong>Radar brightness (dB):</strong> how strongly the radar signal returned from the sea surface. It does not identify oil by itself.</p>
+        </div>
+      </details>
+
       <section class="evidence-grid" aria-label="Drift and source evidence">
         <article class="panel evidence-card timeline-panel" aria-labelledby="timeline-title">
-          <div class="panel-heading timeline-heading"><div><h2 id="timeline-title">Release search window</h2><p class="muted">Model horizon compared with the observation time · UTC</p></div><span id="timeline-duration" class="timeline-duration">—</span></div>
+          <div class="panel-heading timeline-heading"><div><h2 id="timeline-title">Release search window</h2><p class="muted">How far back the model searched from when the radar image was taken · UTC means shared world time</p></div><span id="timeline-duration" class="timeline-duration">—</span></div>
           <div class="timeline-track" role="img" aria-label="Release search window ending at slick observation"><div class="timeline-rail"></div><div id="window-bar" class="window-bar"></div><div id="observation-marker" class="timeline-marker"><span class="marker-dot"></span><span class="marker-label">Slick observed</span></div></div>
           <div class="timeline-labels"><span id="timeline-start">—</span><span id="timeline-end">—</span></div>
           <p class="small-note">This is the configured search horizon. It is not a measured spill duration or a confirmed release time.</p>
@@ -40,21 +53,25 @@
           <div class="uncertainty-card"><div class="uncertainty-title"><span aria-hidden="true">ⓘ</span> Uncertainty and limitations</div><p id="uncertainty-note">No drift result is available for this case.</p></div>
         </article>
         <article class="panel evidence-card sources-card" aria-labelledby="sources-title">
-          <div class="panel-heading"><div><h2 id="sources-title">Input sources</h2><p class="muted">Satellite scene and environmental forcing provenance</p></div></div>
+          <div class="panel-heading"><div><h2 id="sources-title">Input sources</h2><p class="muted">Where the image and wind/current information came from</p></div></div>
           <ul id="source-list" class="detail-list"><li class="muted">No source details available</li></ul>
           <h3 class="subsection-title">Satellite dark-feature screen</h3>
           <div id="sar-candidate-list" class="candidate-list"><p class="empty-state">No satellite screening result is recorded.</p></div>
-          <h3 class="subsection-title">Simulation settings</h3><dl id="settings-list" class="settings-list"><div><dt>Status</dt><dd>No settings recorded</dd></div></dl>
+          <details class="plain-help settings-help">
+            <summary>Technical settings (optional, for replay)</summary>
+            <p class="small-note">These are the exact values used by the screening and drift demonstration. The descriptions explain them in everyday terms.</p>
+            <dl id="settings-list" class="settings-list"><div><dt>Status</dt><dd>No settings recorded</dd></div></dl>
+          </details>
         </article>
         <article class="panel evidence-card vessels-card" aria-labelledby="vessels-title">
-          <div class="panel-heading"><div><h2 id="vessels-title">Vessel screening</h2><p class="muted">AIS candidates supplied for review</p></div><span id="candidate-count" class="candidate-count">0</span></div>
+          <div class="panel-heading"><div><h2 id="vessels-title">Vessel screening</h2><p class="muted">Ships whose reported positions overlap the possible area and time</p></div><span id="candidate-count" class="candidate-count">0</span></div>
           <div id="candidate-list" class="candidate-list"><p class="empty-state">No AIS candidates are included in this case.</p></div>
           <p class="small-note">Missing or sparse AIS data does not prove a vessel was absent. Candidate rankings are not responsibility probabilities.</p>
         </article>
       </section>
       <footer class="page-footer">Review input provenance alongside model outputs. <a data-case-link href="map.html">Open mapped geometries</a>.</footer>
     </main>
-    <script src="case-data.js"></script>
-    <script src="evidence-page.js"></script>
+    <script src="case-data.js?v=2"></script>
+    <script src="evidence-page.js?v=13"></script>
   </body>
 </html>
