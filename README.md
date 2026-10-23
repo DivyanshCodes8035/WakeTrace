@@ -5,10 +5,10 @@ WakeTrace is a prototype workspace for reviewing possible maritime oil-slick cas
 ## What is in the current version
 
 - **Overview** introduces the case and launches the guided practice demonstration.
-- **Map** shows the scene and case geometry, supports Copernicus Sentinel-1 search, screens selected imagery for possible dark features, runs drift analysis, and reviews vessel data.
+- **Map** shows the scene and case geometry, supports Copernicus Sentinel-1 search, screens imagery with a dark-feature detector and experimental AI model, runs drift analysis, and reviews vessel data.
 - **Evidence** presents observation time, the configured release search window, sources, model settings, uncertainty, and vessel-screening results.
 - **Guided synthetic demonstration** walks through six visual steps with a generated radar-style scene, animated current/oil, a possible-origin area, fictional vessel tracks, and ranked practice leads.
-- **Backend API** serves the frontend, processes requested real scene imagery, runs the real drift model, and accepts AIS exports supplied by the analyst.
+- **Backend API** serves the frontend, processes requested real scene imagery, runs both radar screens and the real drift model, and accepts AIS exports supplied by the analyst.
 
 The bundled case and guided demonstration are synthetic. Real-data searches and analyses require internet access, and selected services need credentials.
 
@@ -58,11 +58,20 @@ The Map also offers **Run simulated case** for an offline practice scene. When a
 Use this workflow when reviewing an actual scene. The six visual demo steps above are illustrative; they do not replace the real-data review below.
 
 1. **Choose an area and date range.** On Map, move and zoom the map to the ocean area, then use **Use current map area** or enter west, south, east, and north coordinates. Choose Sentinel-1 polarization (VV or VH) and dates. **Find newest scene automatically** searches the current map area over the latest 32 days. Manual searches are limited to 32 days; scene processing accepts a maximum 2.5° by 2.5° area.
-2. **Find and load a Sentinel-1 scene.** Search the Copernicus Data Space catalog and select a Sentinel-1 GRD result. Catalog search is public; downloading and processing the image uses a Sentinel Hub OAuth client. WakeTrace displays a quicklook and runs the dark-feature screen.
-3. **Review possible dark features.** Inspect the candidate boundary, image, acquisition time, and provenance. A dark feature may be caused by low wind, rain, a wave front, a wake, land, or other effects; the detector does not identify oil and its heuristic score is not a probability. Select a candidate before proceeding.
+2. **Find and load a Sentinel-1 scene.** Search the Copernicus Data Space catalog and select a Sentinel-1 GRD result. Catalog search is public; downloading and processing the image uses a Sentinel Hub OAuth client. WakeTrace displays the image and runs the rule-based dark-feature screen plus the experimental AI screen.
+3. **Review possible slick-like areas.** Compare the amber rule-based outlines and purple AI outlines with the radar image, acquisition time, and provenance. The AI was trained on Gulf of Mexico examples and has not been validated for Mauritius. Wind, rain, waves, wakes, land, or other effects can resemble oil. Neither screen confirms oil; the AI score and dark-feature review score are not probabilities. Select an area before proceeding.
 4. **Estimate a possible origin.** Ask WakeTrace to backtrack an OpenDrift OpenOil ensemble using hourly Open-Meteo ERA5 10 m winds and ERA5-Ocean currents. The default search horizon is 24 hours; the API accepts 6–120 hours and ensemble sizes of 50–2,000 (default 300). Review the origin area, release search window, model assumptions, and input sources. The configured horizon is the search interval; it is not a measured spill duration or release time.
 5. **Review vessel information.** WakeTrace can query optional Global Fishing Watch AIS presence for the modeled area and dates. These are daily grid-cell presence leads, not exact positions or continuous routes. For a detailed comparison, provide an authorized AIS CSV with columns vessel_id, timestamp, longitude, and latitude; position_accuracy_m is optional. Enter the actual provider and dataset. The matcher compares reported tracks against the origin area, release window, and sampled particle corridor where timestamps align. It does not fetch commercial AIS data.
 6. **Assess, save, and revisit the case.** Review the Map, case provenance, coverage gaps, ranking factors, and uncertainty. Save a reviewed real-data case from Map; the API stores it under data/cases/. Reopen a case through its case link/query. A high rank is a screening priority only. Missing AIS reports do not show that a vessel was absent, and no result assigns responsibility.
+
+
+### Experimental AI runtime
+
+The AI runs on processed real Sentinel-1 scenes alongside the regular dark-feature screen. Install its optional CPU runtime from the project root if it is not already available:
+
+    python -m pip install -r backend/ml-requirements.txt
+
+The model weights are included. Scores indicate similarity to training labels, not the probability that a feature is oil. The model has not been validated for Mauritius or all Sentinel-1 conditions. See the model card for dataset attribution, test metrics, and reproduction instructions. The licensed training dataset is not included in the repository.
 
 ### Copernicus credentials for real imagery
 
@@ -79,7 +88,7 @@ For the automatic daily presence query, configure GFW_API_TOKEN in the project-r
 
 ## Data, assumptions, and limitations
 
-- **Radar screening:** The detector screens calibrated Sentinel-1 sigma0 backscatter GeoTIFFs in dB for connected dark regions. It is a heuristic, not a trained oil classifier. No real satellite scene is bundled with the project.
+- **Radar screening:** The rule-based detector screens calibrated Sentinel-1 sigma0 backscatter GeoTIFFs in dB for connected dark regions. The separate experimental AI model, **WakeTrace experimental Sentinel-1 slick-like TinyUNet v1**, was trained on 173 labeled Sentinel-1 tiles from Cantarell in the Gulf of Mexico (108 train, 43 validation, 22 held-out test). Its held-out test slick IoU was 0.618; this in-domain result does not establish performance in Mauritius. Model scores are not oil probabilities. Neither screen confirms oil. No real satellite scene is bundled with the project. See the [model card](backend/models/MODEL_CARD.md) and [training report](backend/models/oil_slick_training_report.json).
 - **Drift:** OpenDrift backtracks a particle ensemble using Open-Meteo ERA5 and ERA5-Ocean reanalysis. Approximate grid spacing is about 25 km for wind and 50 km for current. Coastal circulation, waves, shoreline effects, oil properties, and forcing uncertainty limit precision; this is not an operational spill forecast.
 - **Vessel presence:** Global Fishing Watch results are aggregated daily cells and can have incomplete coverage. A cell center is approximate and must not be drawn as a precise vessel route.
 - **Detailed AIS matching:** Scores and candidate order are review aids, not probabilities. Short gaps may be interpolated only under matcher limits; long gaps and implausible jumps break route segments. A match does not prove a vessel caused a release.
@@ -91,7 +100,9 @@ See [docs/data-contract.md](docs/data-contract.md) for the case schema, result d
 ## Project layout
 
     backend/app/api/          FastAPI routes and case storage
-    backend/app/detection/    Sentinel-1 screening, Copernicus access, and practice scene generation
+    backend/app/detection/    Sentinel-1 screens, Copernicus access, and practice scene generation
+    backend/models/           Trained model weights, model card, and training report
+    backend/scripts/          Model training script
     backend/app/drift/        OpenDrift model and Open-Meteo wind/current retrieval
     backend/app/vessels/      AIS matching and optional Global Fishing Watch presence
     frontend/                 Overview, Map, styles, and guided demo
@@ -109,7 +120,7 @@ The API runs on port 8002. Full schemas are shown at http://localhost:8002/docs.
 | GET /api/cases/{case_id} | Load the bundled example or a saved case. |
 | POST /api/cases | Save a reviewed real-data case under data/cases/. |
 | GET /api/satellite/search | Search Sentinel-1 scenes by bounding box, dates, and polarization. |
-| POST /api/satellite/scenes/{scene_id}/preview | Fetch a scene preview and screen its dark features. |
+| POST /api/satellite/scenes/{scene_id}/preview | Fetch a scene preview and run the rule-based and AI screens. |
 | POST /api/satellite/scenes/{scene_id}/simulate | Plant and screen a fictional patch on a copy of a real scene. |
 | POST /api/simulation/practice | Generate and run an offline synthetic practice scene. |
 | POST /api/satellite/scenes/{scene_id}/drift | Backtrack a selected real feature using reanalysis forcing. |

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from app.detection.copernicus import make_scene_preview, process_sentinel1_scene, search_sentinel1
 from app.detection.sar import DetectionInputError, detect_sar_dark_features
+from app.detection.oil_slick_model import detect_ai_slick_candidates
 from app.detection.simulation import make_offline_practice_scene, run_simulated_spill
 from app.drift.open_meteo_forcing import fetch_readers
 from app.drift.simulation import DriftInputError, estimate_origin
@@ -192,6 +193,13 @@ async def satellite_scene_preview(scene_id: str, selection: SceneSelection) -> d
             source={"provider": "Copernicus Data Space", "dataset": metadata["dataset"], "product_id": scene_id},
             polarization=polarization,
         )
+        try:
+            ai_result = await asyncio.to_thread(detect_ai_slick_candidates, temporary_path)
+            detection["ai_screen"] = {"status": "complete", **ai_result}
+        except Exception as exc:
+            # The trained model is optional; preserve the existing SAR screen if
+            # its runtime or checkpoint is unavailable, and make that visible.
+            detection["ai_screen"] = {"status": "unavailable", "message": str(exc)}
         detection["preview_url"] = preview["preview_url"]
         detection["preview_bounds"] = preview["preview_bounds"]
         detection["provenance"]["input_sources"][0].update({

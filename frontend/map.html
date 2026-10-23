@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=13">
+    <link rel="stylesheet" href="styles.css?v=14">
     <link rel="stylesheet" href="guided-demo.css?v=2">
   </head>
   <body>
@@ -70,10 +70,16 @@
       </section>
       <section id="real-detection-results" class="panel real-detection-panel" aria-labelledby="real-detection-title" hidden>
         <div class="panel-heading">
-          <div><div class="eyebrow">REAL-DATA REVIEW</div><h2 id="real-detection-title">Review a dark radar feature</h2>
-            <p class="muted">These are possible dark areas, not confirmed oil. Choose one to estimate a possible origin with real wind and current data.</p></div>
+          <div><div class="eyebrow">REAL-DATA REVIEW</div><h2 id="real-detection-title">Review possible slick areas</h2>
+            <p class="muted">Compare the radar screen with the experimental AI screen below. Both show possible slick-like areas; neither confirms oil.</p></div>
         </div>
         <div id="real-candidate-list" class="simulation-vessel-list"></div>
+        <section id="ai-screen-results" class="ai-screen-results" aria-live="polite" hidden>
+          <h3>Experimental AI screen</h3>
+          <p id="ai-screen-summary" class="muted"></p>
+          <div id="ai-candidate-list" class="simulation-vessel-list"></div>
+          <p id="ai-screen-limitations" class="muted ai-screen-limitations"></p>
+        </section>
         <button id="save-real-case" class="secondary-button" type="button" hidden>Save this reviewed case</button>
         <p id="save-case-status" class="upload-status" role="status" aria-live="polite" hidden></p>
         <div id="real-drift-output" class="simulation-ground-truth" hidden>
@@ -115,7 +121,7 @@
       <section id="map-panel" class="map-panel panel map-page-panel" aria-labelledby="map-title">
         <div class="panel-heading map-heading">
           <div><h2 id="map-title">Area of interest</h2><p id="map-description" class="muted">Observed slick boundary and possible drift origin</p></div>
-          <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-particles" hidden><i class="legend-swatch particles"></i>Modeled oil particles</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate route <span class="legend-vessel" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg></span>Ship / AIS position</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
+          <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-ai" hidden><i class="legend-swatch ai-slick"></i>AI slick-like texture</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-particles" hidden><i class="legend-swatch particles"></i>Modeled oil particles</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate route <span class="legend-vessel" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg></span>Ship / AIS position</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
         </div>
         <details class="plain-help map-help">
           <summary>What do the map symbols and terms mean?</summary>
@@ -167,7 +173,7 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="case-data.js?v=2"></script>
-    <script src="map-page.js?v=37"></script>
+    <script src="map-page.js?v=39"></script>
     <script src="guided-demo.js?v=3"></script>
   </body>
 </html>
