@@ -730,7 +730,7 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 650; }
 }
 
 /* ─── Overview Page ──────────────────────────────────────── */
-.overview-shell, .evidence-shell { max-width: 1240px; }
+
 .overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.82fr);
