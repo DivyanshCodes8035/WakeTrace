@@ -69,3 +69,8 @@ body.guided-mode #simulation-step, body.guided-mode #simulation-results, body.gu
   .flow-arrow { animation: none; opacity: .85; transform: rotate(var(--rot)); }
   .guided-gauge, .guided-row, .guided-gauge .ring { animation: none; }
 }
+/* wind what-if controls */
+.guided-wind-ctl[hidden] { display: none; }
+.guided-wind-ctl label { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 12px; color: var(--ink-soft); }
+.guided-wind-ctl input[type=range] { width: 100%; }
+.guided-wind-ctl select { padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }

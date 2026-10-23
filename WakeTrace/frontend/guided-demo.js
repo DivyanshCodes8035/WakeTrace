@@ -64,7 +64,7 @@
       }
     }
     const bearing = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
-    vecCache = { speed: Math.hypot(u, v), bearing, derived, name: compass(bearing) };
+    vecCache = { u, v, speed: Math.hypot(u, v), bearing, derived, name: compass(bearing) };
     return vecCache;
   }
 
@@ -80,8 +80,8 @@
   const STEPS = [
     { label: "Find probable slick", dwell: 3500, title: "1 · Find the probable slick",
       text: "Satellite radar (SAR) makes calm, oil-smoothed water look dark. WakeTrace screens the image for dark patches. Dark does not always mean oil (wind shadows and algae look similar), so this is only a possible slick." },
-    { label: "Wind", dwell: 3500, title: "2 · Wind",
-      text: "Wind pushes floating oil along the surface. Real runs read hourly wind from Copernicus Marine. This practice case assumes calm wind (0 m/s) so the effect of the current can be shown on its own." },
+    { label: "Wind", dwell: 6500, title: "2 · Wind (what-if)",
+      text: "Wind pushes floating oil too. A common rule of thumb is that oil moves with about 3% of the wind speed on top of the current. Use the slider and watch the orange oil path bend away from the teal current-only path. The origin and vessel ranking in later steps still use the calm-wind backend run." },
     { label: "Water flow", dwell: 4500, title: "3 · Water flow (current)",
       text: "Ocean current carries the oil. The animated arrows show the direction and speed used in this practice case, taken from how the modeled oil particles move." },
     { label: "Trace back to origin", dwell: 7000, title: "4 · Trace back to a possible origin",
@@ -144,14 +144,88 @@
     msg(n ? "Possible dark patch highlighted · synthetic exercise only; not confirmed oil." : "No dark feature met the screening settings in this run.");
   }
 
-  function stepWind() {
+  /* ---------- wind what-if (browser-side, simplified: oil drift = current + 3% of wind) ---------- */
+  const wind = { speed: 8, from: 315 };
+  const whatifLayer = L.layerGroup().addTo(map);
+  let whatifTimer = null, whatifDebounce = null;
+  const DIRS = [["N", 0], ["NE", 45], ["E", 90], ["SE", 135], ["S", 180], ["SW", 225], ["W", 270], ["NW", 315]];
+  const windCtl = el("div", "guided-explain guided-wind-ctl");
+  windCtl.hidden = true;
+  windCtl.innerHTML = "<h3>Try a wind (what-if)</h3>" +
+    '<label>Wind speed: <b id="gw-speed">8</b> m/s<input id="gw-range" type="range" min="0" max="15" step="1" value="8"></label>' +
+    '<label>Blowing from<select id="gw-dir">' + DIRS.map(([n, d]) => '<option value="' + d + '"' + (d === 315 ? " selected" : "") + ">" + n + "</option>").join("") + "</select></label>" +
+    "<p>Browser-side simplified model for explanation. Real runs use OpenDrift with Copernicus wind.</p>";
+  side.append(windCtl);
+  const trigger = () => { clearTimeout(whatifDebounce); whatifDebounce = setTimeout(() => { if (done >= 1 && done < 3) runWhatIf(); }, 150); };
+  windCtl.querySelector("#gw-range").addEventListener("input", (e) => { wind.speed = Number(e.target.value); windCtl.querySelector("#gw-speed").textContent = wind.speed; trigger(); });
+  windCtl.querySelector("#gw-dir").addEventListener("change", (e) => { wind.from = Number(e.target.value); trigger(); });
+
+  function windGauge() {
     gauges.querySelector(".g-wind")?.remove();
+    const toward = (wind.from + 180) % 360;
     const g = el("div", "guided-gauge g-wind");
-    g.innerHTML = '<svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="20" fill="none" stroke="#9fc3cf" stroke-width="1.5"/><circle class="ring" cx="23" cy="23" r="20" fill="none" stroke="#8fe9ff" stroke-width="2"/><circle cx="23" cy="23" r="3" fill="#8fe9ff"/><text x="23" y="10" text-anchor="middle" font-size="8" fill="#9fc3cf">N</text></svg>' +
-      "<div><small>WIND</small><b>Calm · 0 m/s</b><span>assumed in practice case</span></div>";
+    const needle = wind.speed > 0
+      ? '<g transform="rotate(' + toward + ' 23 23)"><path d="M23 9l7 11h-4.5v13h-5V20H16z" fill="#ffb15e"/></g>'
+      : '<circle class="ring" cx="23" cy="23" r="20" fill="none" stroke="#8fe9ff" stroke-width="2"/><circle cx="23" cy="23" r="3" fill="#8fe9ff"/>';
+    g.innerHTML = '<svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="20" fill="none" stroke="#9fc3cf" stroke-width="1.5"/><text x="23" y="10" text-anchor="middle" font-size="8" fill="#9fc3cf">N</text>' + needle + "</svg>" +
+      "<div><small>WIND (WHAT-IF)</small><b>" + (wind.speed > 0 ? wind.speed + " m/s from " + compass(wind.from) : "Calm · 0 m/s") + "</b><span>you can change this</span></div>";
     gauges.prepend(g);
-    chip('<span aria-hidden="true">≋</span>', "WIND · CALM (ASSUMED)");
-    msg("Wind is assumed calm in this synthetic case, so it adds no push. Real cases use Copernicus wind data.");
+  }
+
+  function runWhatIf() {
+    clearInterval(whatifTimer);
+    whatifLayer.clearLayers();
+    windGauge();
+    const c = currentVec();
+    const frames = (result.drift?.animation?.frames || []).filter((f) => f && f.time && Array.isArray(f.positions));
+    let rel = result.simulation.source_point.coordinates;
+    let T = 6 * 3600;
+    if (frames.length >= 2) {
+      const pts = frames[0].positions.filter((q) => Array.isArray(q) && q.every(Number.isFinite));
+      if (pts.length) rel = [pts.reduce((a, q) => a + q[0], 0) / pts.length, pts.reduce((a, q) => a + q[1], 0) / pts.length];
+      const dt = (new Date(frames[frames.length - 1].time) - new Date(frames[0].time)) / 1000;
+      if (dt > 0) T = dt;
+    }
+    const toward = ((wind.from + 180) % 360) * Math.PI / 180;
+    const w = 0.03 * wind.speed;
+    const uT = c.u + w * Math.sin(toward), vT = c.v + w * Math.cos(toward);
+    const mLat = 111195, mLon = 111195 * Math.cos(rel[1] * Math.PI / 180);
+    const at = (u, v, t, jx = 0, jy = 0) => [rel[1] + (v * t + jy) / mLat, rel[0] + (u * t + jx) / mLon];
+    const start = [rel[1], rel[0]];
+    const baseEnd = at(c.u, c.v, T), windEnd = at(uT, vT, T);
+    L.polyline([start, baseEnd], { color: "#66d5ca", weight: 3, dashArray: "6 6", opacity: .95 }).bindPopup("Current only (calm wind)").addTo(whatifLayer);
+    L.circleMarker(start, { radius: 7, color: "#fff", weight: 3, fillColor: "#d44d69", fillOpacity: 1 }).bindPopup("Release point").addTo(whatifLayer);
+    const trail = L.polyline([start, start], { color: "#ffb15e", weight: 3, opacity: .95 }).addTo(whatifLayer);
+    const jit = (i, k) => ((Math.sin((i + 1) * 12.9898 + k * 78.233) * 43758.5453) % 1) * 220;
+    const parts = Array.from({ length: 24 }, (_, i) => L.circleMarker(start, { radius: 3.5, color: "#fff2e0", weight: 1, fillColor: "#ffb15e", fillOpacity: .9 }).addTo(whatifLayer));
+    const km = w * T / 1000;
+    const dirName = compass(toward * 180 / Math.PI);
+    const note = wind.speed > 0
+      ? "Wind " + wind.speed + " m/s from " + compass(wind.from) + " moves the oil about " + km.toFixed(1) + " km toward " + dirName + " compared with current alone. The radar slick was generated with calm wind, so this is a sensitivity demo."
+      : "Calm wind: the oil simply follows the current.";
+    chip('<span aria-hidden="true">≋</span>', wind.speed > 0 ? "WIND + CURRENT · WHAT-IF" : "WIND · CALM");
+    msg(note);
+    map.fitBounds(L.latLngBounds([start, baseEnd, windEnd]), { padding: [70, 70], maxZoom: 13, animate: !reduceMotion });
+    const steps = reduceMotion ? 1 : 100;
+    let k = 0;
+    const frame = () => {
+      const f = Math.min(1, k / steps), t = T * f;
+      parts.forEach((m, i) => m.setLatLng(at(uT, vT, t, jit(i, 1) * (.3 + f), jit(i, 2) * (.3 + f))));
+      trail.setLatLngs([start, at(uT, vT, t)]);
+      if (k >= steps) {
+        clearInterval(whatifTimer);
+        if (wind.speed > 0) L.circleMarker(windEnd, { radius: 5, color: "#fff", weight: 2, fillColor: "#ffb15e", fillOpacity: 1 })
+          .bindTooltip("+" + km.toFixed(1) + " km " + dirName + " from wind", { permanent: true, direction: "top" }).addTo(whatifLayer);
+      }
+      k += 1;
+    };
+    frame();
+    if (!reduceMotion) whatifTimer = setInterval(frame, 50);
+  }
+
+  function stepWind() {
+    windCtl.hidden = false;
+    runWhatIf();
   }
 
   function drawFlow() {
@@ -195,6 +269,7 @@
     sub.src = L.circleMarker([p[1], p[0]], { radius: 8, color: "#fff", weight: 3, fillColor: "#d44d69", fillOpacity: 1 })
       .bindPopup("Fictional release point planted for this exercise.").addTo(gl);
     map.getPane("flowPane").classList.add("is-dim");
+    clearInterval(whatifTimer); whatifLayer.clearLayers(); windCtl.hidden = true;
     configureTrajectoryPlayback(result.drift, [], "Teal dots replay the modeled drift from the possible origin toward the slick. Synthetic practice data.");
     show("legend-origin"); show("legend-sim-source");
     chip('<span aria-hidden="true">↶</span>', "POSSIBLE ORIGIN · UNCERTAIN");
@@ -300,6 +375,7 @@
   function clearAll() {
     playing = false; flowOn = false; vecCache = null; done = -1; sub = {};
     gl.clearLayers(); flowLayer.clearLayers(); gauges.replaceChildren();
+    clearInterval(whatifTimer); whatifLayer.clearLayers(); windCtl.hidden = true;
     try { configureTrajectoryPlayback(null, []); } catch (error) { /* nothing playing */ }
     if (map.hasLayer(layers)) map.removeLayer(layers);
     if (simulationSlickMarker && map.hasLayer(simulationSlickMarker)) map.removeLayer(simulationSlickMarker);
