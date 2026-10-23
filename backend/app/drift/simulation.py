@@ -90,6 +90,44 @@ def _convex_hull(points: Sequence[tuple[float, float]]) -> list[list[float]]:
     return ring
 
 
+def _trajectory_animation(result: Any, *, max_particles: int = 96, max_frames: int = 72) -> dict[str, Any]:
+    """Return a compact, time-ordered sample of the modelled particle paths."""
+    lons = result["lon"].transpose("time", "trajectory").values
+    lats = result["lat"].transpose("time", "trajectory").values
+    raw_times = result["time"].values
+    if lons.ndim != 2 or lats.shape != lons.shape or len(raw_times) != lons.shape[0]:
+        return {"direction": "forward replay of backward hindcast", "frames": [], "particle_count": 0}
+
+    time_count, trajectory_count = lons.shape
+    frame_count = min(time_count, max_frames)
+    frame_indices = sorted({round(index * (time_count - 1) / max(frame_count - 1, 1))
+                            for index in range(frame_count)}, reverse=True)
+    particle_count = min(trajectory_count, max_particles)
+    particle_indices = [round(index * (trajectory_count - 1) / max(particle_count - 1, 1))
+                        for index in range(particle_count)]
+    frames = []
+    for frame_index in frame_indices:
+        raw_time = raw_times[frame_index]
+        try:
+            timestamp = datetime.fromtimestamp(
+                int(raw_time.astype("datetime64[s]").astype(int)), timezone.utc
+            ).isoformat(timespec="seconds").replace("+00:00", "Z")
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            timestamp = str(raw_time).replace(" ", "T")
+            if not timestamp.endswith("Z"):
+                timestamp += "Z"
+        positions = []
+        for particle_index in particle_indices:
+            lon, lat = float(lons[frame_index, particle_index]), float(lats[frame_index, particle_index])
+            positions.append([lon, lat] if lon == lon and lat == lat and abs(lon) <= 180 and abs(lat) <= 90 else None)
+        frames.append({"time": timestamp, "positions": positions})
+    return {
+        "direction": "forward replay of backward hindcast",
+        "frames": frames,
+        "particle_count": particle_count,
+    }
+
+
 def estimate_origin(
     slick_geometry: Mapping[str, Any],
     observed_at: str | datetime,
@@ -159,6 +197,7 @@ def estimate_origin(
     ]
     if not origins:
         raise RuntimeError("OpenDrift returned no valid particle positions at the search horizon")
+    animation = _trajectory_animation(result)
 
     hull = _convex_hull(origins)
     if len(hull) == 1:
@@ -188,6 +227,7 @@ def estimate_origin(
             "end": observed.isoformat().replace("+00:00", "Z"),
         },
         "origin_zone": origin_zone,
+        "animation": animation,
         "ensemble_size": len(origins),
         "uncertainty_note": (
             "Possible origin area from backward particle endpoints under the supplied forcing. "

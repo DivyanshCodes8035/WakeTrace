@@ -3,14 +3,19 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").match
 const colors = {
   slick: { color: "#ffd17d", weight: 3, fillColor: "#f3a642", fillOpacity: 0.16, className: "slick-candidate-outline", smoothFactor: 2.5, lineJoin: "round", lineCap: "round" },
   origin: { color: "#0f7c86", weight: 3, fillColor: "#55b8ad", fillOpacity: 0.3, dashArray: "7 5" },
-  track: { color: "#35507a", weight: 3, opacity: 0.9, dashArray: "6 6" },
+  track: { color: "#66d5ca", weight: 3, opacity: 0.95, dashArray: "1 8", lineCap: "round", lineJoin: "round" },
   secondary: { color: "#b5dcce", weight: 2, fillColor: "#83cbb9", fillOpacity: 0.14, dashArray: "3 5" },
 };
+function candidateRouteStyle(index = 0) {
+  return { ...colors.track, color: index === 0 ? "#ff827f" : "#f5bd58" };
+}
+const shipSvg = '<svg viewBox="0 0 32 32" aria-hidden="true"><defs><radialGradient id="hullGrad" cx="40%" cy="30%" r="70%"><stop offset="0%" stop-color="#d0f0ec"/><stop offset="100%" stop-color="#9de8e0"/></radialGradient></defs><path d="M16 3 L22 9 L22 24 L16 29 L10 24 L10 9 Z" fill="url(#hullGrad)"/><rect x="12" y="10" width="8" height="5" rx="1" class="ship-bridge"/><line x1="11" y1="18" x2="21" y2="18" class="ship-deck"/><line x1="12" y1="21" x2="20" y2="21" class="ship-deck"/><line x1="13.5" y1="24" x2="18.5" y2="24" class="ship-deck"/><path d="M6 17 C4.5 20 5 23 7 25 M26 17 C27.5 20 27 23 25 25" class="ship-wake"/></svg>';
 const historicalIncident = { latitude: -20.4382, longitude: 57.7447 };
 
 const hasMapLibrary = Boolean(window.L);
 let map = null;
 let layers = null;
+let animationLayer = null;
 let sceneOverlay = null;
 let incidentMarker = null;
 let simulationMarker = null;
@@ -18,13 +23,29 @@ let simulationSlickMarker = null;
 let userChoseMapArea = false;
 let selectedScene = null;
 let selectedSceneBounds = null;
+let trajectoryPlayback = null;
+
+function vesselIcon(variant = "report") {
+  const report = variant === "report";
+  return L.divIcon({
+    className: "vessel-icon-container",
+    html: '<span class="vessel-icon vessel-icon-' + variant + '">' + shipSvg + '</span>',
+    iconSize: report ? [30, 30] : [40, 40],
+    iconAnchor: report ? [15, 15] : [20, 20],
+    popupAnchor: [0, -14],
+  });
+}
 
 function addGeometry(geometry, style, label) {
   if (!geometry || !map || !layers) return false;
   try {
     const geojson = ["Feature", "FeatureCollection"].includes(geometry.type)
       ? geometry : { type: "Feature", properties: {}, geometry };
-    L.geoJSON(geojson, { style }).eachLayer((layer) => layer.bindPopup(label)).addTo(layers);
+    const isVesselTrack = /vessel|ais candidate route/i.test(label);
+    const pointToLayer = isVesselTrack
+      ? (_feature, latlng) => L.marker(latlng, { icon: vesselIcon("report") })
+      : undefined;
+    L.geoJSON(geojson, { style, pointToLayer }).eachLayer((layer) => layer.bindPopup(label)).addTo(layers);
     return true;
   } catch (error) {
     console.warn("Skipped invalid case geometry", error);
@@ -40,10 +61,159 @@ function apiRoot() {
   return "http://" + (window.location.hostname || "localhost") + ":8002";
 }
 
+function candidatePositionAt(positions, timestamp) {
+  if (!Array.isArray(positions) || !positions.length) return null;
+  const target = timestamp.getTime();
+  const fixes = positions.map((item) => ({
+    time: new Date(item.time).getTime(),
+    lon: Number(item.coordinates?.[0]),
+    lat: Number(item.coordinates?.[1]),
+  })).filter((item) => Number.isFinite(item.time) && Number.isFinite(item.lon) && Number.isFinite(item.lat))
+    .sort((a, b) => a.time - b.time);
+  if (!fixes.length || target < fixes[0].time || target > fixes[fixes.length - 1].time) return null;
+  for (let index = 0; index < fixes.length; index += 1) {
+    const first = fixes[index];
+    if (target === first.time) return [first.lat, first.lon];
+    const second = fixes[index + 1];
+    if (!second || target > second.time) continue;
+    const gap = second.time - first.time;
+    if (gap <= 0 || gap > 2 * 60 * 60 * 1000) return null;
+    const meanLat = (first.lat + second.lat) / 2 * Math.PI / 180;
+    const dx = ((second.lon - first.lon + 540) % 360 - 180) * Math.cos(meanLat) * 111.195;
+    const dy = (second.lat - first.lat) * 111.195;
+    const speedKnots = Math.hypot(dx, dy) / (gap / 3600000) / 1.852;
+    if (speedKnots > 60) return null;
+    const fraction = (target - first.time) / gap;
+    const lon = ((first.lon + (((second.lon - first.lon + 540) % 360) - 180) * fraction + 540) % 360) - 180;
+    return [first.lat + (second.lat - first.lat) * fraction, lon];
+  }
+  return null;
+}
+
+function updateTrajectoryFrame(index) {
+  if (!trajectoryPlayback) return;
+  const state = trajectoryPlayback;
+  state.index = Math.max(0, Math.min(index, state.frames.length - 1));
+  const frame = state.frames[state.index];
+  const frameTime = new Date(frame.time);
+  const positions = frame.positions || [];
+  state.particleMarkers.forEach((marker, particleIndex) => {
+    const trail = [];
+    for (let frameIndex = 0; frameIndex <= state.index; frameIndex += 1) {
+      const point = state.frames[frameIndex].positions?.[particleIndex];
+      if (Array.isArray(point) && point.length >= 2 && point.every(Number.isFinite)) trail.push([point[1], point[0]]);
+    }
+    state.particleTrails[particleIndex].setLatLngs(trail);
+    const point = positions[particleIndex];
+    if (Array.isArray(point) && point.length >= 2 && point.every(Number.isFinite)) {
+      marker.setLatLng([point[1], point[0]]).setStyle({ opacity: 1, fillOpacity: .9 });
+    } else {
+      marker.setStyle({ opacity: 0, fillOpacity: 0 });
+    }
+  });
+  state.vessels.forEach(({ marker, candidate }) => {
+    const point = candidatePositionAt(candidate.track_positions, frameTime);
+    if (point) marker.setLatLng(point).setOpacity(1);
+    else marker.setOpacity(0);
+  });
+  $("trajectory-range").value = String(state.index);
+  $("trajectory-time").textContent = frameTime.toLocaleString(undefined, {
+    timeZone: "UTC", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  }) + " UTC";
+  $("trajectory-play").textContent = state.timer
+    ? "Pause"
+    : state.index >= state.frames.length - 1 ? "Replay drift" : state.index > 0 ? "Resume drift" : "Play drift";
+}
+
+function startTrajectoryPlayback() {
+  if (!trajectoryPlayback || trajectoryPlayback.timer) return;
+  if (trajectoryPlayback.index >= trajectoryPlayback.frames.length - 1) updateTrajectoryFrame(0);
+  trajectoryPlayback.timer = window.setInterval(() => {
+    const next = trajectoryPlayback.index + 1;
+    if (next >= trajectoryPlayback.frames.length) {
+      window.clearInterval(trajectoryPlayback.timer);
+      trajectoryPlayback.timer = null;
+      updateTrajectoryFrame(trajectoryPlayback.index);
+    } else {
+      updateTrajectoryFrame(next);
+    }
+  }, 650);
+  updateTrajectoryFrame(trajectoryPlayback.index);
+}
+
+function configureTrajectoryPlayback(drift, candidates = [], note = "") {
+  if (trajectoryPlayback?.timer) window.clearInterval(trajectoryPlayback.timer);
+  if (animationLayer) animationLayer.clearLayers();
+  const frames = (drift?.animation?.frames || []).filter((frame) => frame?.time && Array.isArray(frame.positions));
+  const controls = $("trajectory-controls");
+  if (frames.length < 2 || !animationLayer) {
+    controls.hidden = true;
+    $("legend-particles").hidden = true;
+    trajectoryPlayback = null;
+    return;
+  }
+  const particleCount = Math.min(...frames.map((frame) => frame.positions.length));
+  if (particleCount < 1) {
+    controls.hidden = true;
+    $("legend-particles").hidden = true;
+    trajectoryPlayback = null;
+    return;
+  }
+  const particleMarkers = [];
+  const particleTrails = [];
+  for (let index = 0; index < particleCount; index += 1) {
+    const trail = L.polyline([], { color: "#63d5c6", weight: 1.5, opacity: .32, smoothFactor: 1 }).addTo(animationLayer);
+    const marker = L.circleMarker([0, 0], { radius: 3.5, className: "trajectory-particle", fillColor: "#68d5c5", color: "#e4fffb" }).addTo(animationLayer);
+    particleTrails.push(trail);
+    particleMarkers.push(marker);
+  }
+  const vesselMarkers = candidates.filter((candidate) => Array.isArray(candidate.track_positions) && candidate.track_positions.length)
+    .map((candidate, index) => {
+      const marker = L.marker([0, 0], {
+        icon: vesselIcon(index === 0 ? "lead" : "candidate"),
+        opacity: 0,
+        keyboard: true,
+      }).bindPopup("AIS candidate " + (candidate.rank ? "#" + candidate.rank + " · " : "") + candidate.vessel_id + " · screening lead only").addTo(animationLayer);
+      return { marker, candidate };
+    });
+  trajectoryPlayback = { frames, particleMarkers, particleTrails, vessels: vesselMarkers, index: 0, timer: null };
+  $("trajectory-range").max = String(frames.length - 1);
+  $("trajectory-range").value = "0";
+  $("trajectory-note").textContent = note || (drift.animation.direction === "forward synthetic particle demonstration"
+    ? "Synthetic current demonstration and fictional AIS routes. This animation is practice data, not an observed spill."
+    : "Particle paths replay the backward model in time order. Moving vessels appear only where timestamped AIS positions are available.");
+  controls.hidden = false;
+  $("legend-particles").hidden = false;
+  updateTrajectoryFrame(0);
+  startTrajectoryPlayback();
+}
+
+$("trajectory-range").addEventListener("input", (event) => {
+  if (!trajectoryPlayback) return;
+  if (trajectoryPlayback.timer) {
+    window.clearInterval(trajectoryPlayback.timer);
+    trajectoryPlayback.timer = null;
+  }
+  updateTrajectoryFrame(Number(event.currentTarget.value));
+});
+
+$("trajectory-play").addEventListener("click", () => {
+  if (!trajectoryPlayback) return;
+  if (trajectoryPlayback.timer) {
+    window.clearInterval(trajectoryPlayback.timer);
+    trajectoryPlayback.timer = null;
+    updateTrajectoryFrame(trajectoryPlayback.index);
+    return;
+  }
+  startTrajectoryPlayback();
+});
+
 function revealVesselResults(result) {
   addGeometry(result.drift.origin_zone, colors.origin, "Possible origin area from synthetic drift exercise");
-  (result.vessel_candidates || []).forEach((candidate) => addGeometry(candidate.track, colors.track,
+  (result.vessel_candidates || []).forEach((candidate, index) => addGeometry(candidate.track, candidateRouteStyle(index),
     candidate.vessel_id + " · fictional vessel track"));
+  configureTrajectoryPlayback(result.drift, result.vessel_candidates || [],
+    "Synthetic current demonstration and fictional AIS routes. This animation is practice data, not an observed spill.");
   const source = result.simulation.source_point.coordinates;
   simulationMarker = L.circleMarker([source[1], source[0]], {
     radius: 8, color: "#ffffff", weight: 3, fillColor: "#d44d69", fillOpacity: 1,
@@ -176,6 +346,7 @@ if (!hasMapLibrary) {
   map.setView([0, 0], 2);
   map.on("dragend click", () => { userChoseMapArea = true; });
   layers = L.featureGroup().addTo(map);
+  animationLayer = L.layerGroup().addTo(map);
   $("fit-button").addEventListener("click", fitToCase);
   map.on("click", (event) => {
     userChoseMapArea = true;
@@ -218,9 +389,10 @@ WakeTraceCase.load()
     addGeometry(caseData.drift?.origin_zone, colors.origin, "Possible origin area from drift simulation");
     let tracks = 0;
     (caseData.vessel_candidates || []).forEach((candidate) => {
-      if (addGeometry(candidate.track, colors.track, "Possible vessel track · not evidence of responsibility")) tracks += 1;
+      if (addGeometry(candidate.track, candidateRouteStyle(index), "Possible vessel track · not evidence of responsibility")) tracks += 1;
     });
     $("legend-track").hidden = tracks === 0;
+    configureTrajectoryPlayback(caseData.drift, caseData.vessel_candidates || []);
     if (layers.getLayers().length) {
       map.invalidateSize();
       fitToCase();
@@ -616,6 +788,7 @@ async function estimateRealDrift(candidate, button) {
     $("real-drift-sources").textContent = "Real data used: " + result.drift.provenance.input_sources.map((source) => source.product + " (" + source.dataset + ")").join(" and ") + ". The release window is the model search period, not a measured spill time.";
     $("real-drift-output").hidden = false;
     window.currentRealDrift = result.drift;
+    configureTrajectoryPlayback(result.drift, [], "Modeled particle paths replay the backward drift estimate from the possible origin area toward the observed dark feature. This is a model, not a measured spill route.");
     window.realCaseData.drift = result.drift;
     $("real-ais-auto").hidden = false;
     $("manual-ais-review").hidden = false;
@@ -736,12 +909,16 @@ $("real-ais-form").addEventListener("submit", async (event) => {
       heading.append(textNode("span", candidate.priority_score + " / 100", "score-pill"));
       card.append(heading, textNode("p", candidate.explanation), textNode("p", candidate.data_quality_note, "muted"));
       $("real-ais-candidates").append(card);
-      addGeometry(candidate.track, colors.track, "AIS candidate route · possible lead only");
+      addGeometry(candidate.track, candidateRouteStyle(index), "AIS candidate route · possible lead only");
     });
+    configureTrajectoryPlayback(window.currentRealDrift, result.vessel_candidates,
+      "Modeled particle paths and timestamped AIS tracks share one playback clock. Candidate scores include proximity to the model corridor.");
     window.realCaseData.vessel_candidates = result.vessel_candidates;
     window.realCaseData.provenance = result.provenance;
     status.textContent = result.vessel_candidates.length
-      ? result.vessel_candidates.length + " possible AIS match(es). " + result.note
+      ? result.vessel_candidates.length + " possible AIS match(es). Highest screening priority: "
+        + result.vessel_candidates[0].vessel_id + " (" + result.vessel_candidates[0].priority_score
+        + "/100). This is a lead for review, not vessel attribution. " + result.note
       : "No AIS positions from this file fell within the configured search radius and release window. Missing AIS coverage is not evidence that a vessel was absent.";
     $("legend-track").hidden = result.vessel_candidates.length === 0;
   } catch (error) {

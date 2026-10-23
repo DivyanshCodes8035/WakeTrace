@@ -5,6 +5,7 @@ and does not compare AIS tracks to time-varying particle trajectories.
 """
 from __future__ import annotations
 
+from bisect import bisect_left
 from copy import deepcopy
 from datetime import datetime, timezone
 from math import asin, cos, isfinite, radians, sin, sqrt
@@ -299,9 +300,9 @@ def match_vessel_candidates(
 ) -> dict[str, Any]:
     """Return a copied case with candidates screened from supplied AIS observations.
 
-    Each observation needs vessel_id, timestamp, longitude, and latitude. The
-    drift origin geometry is treated as a static screening zone across the
-    release window because the current case contract has no time-varying corridor.
+    Each observation needs vessel_id, timestamp, longitude, and latitude. A
+    supplied particle animation is used as a time-varying corridor. Older cases
+    without particle positions retain the static origin-zone comparison.
     """
     if search_radius_km <= 0 or max_candidates <= 0:
         raise VesselMatchingInputError("search_radius_km and max_candidates must be positive")
@@ -318,6 +319,24 @@ def match_vessel_candidates(
     if origin_zone is None:
         raise VesselMatchingInputError("case needs drift.origin_zone before AIS matching")
     origin_points, polygons = _geometry_parts(origin_zone)
+    model_frames = []
+    animation = drift.get("animation")
+    animation_frames = animation.get("frames", []) if isinstance(animation, dict) else []
+    for frame in (animation_frames if isinstance(animation_frames, list) else []):
+        if not isinstance(frame, dict):
+            continue
+        try:
+            frame_time = _parse_time(frame.get("time"), "drift animation time")
+            particles = [tuple(map(float, point[:2])) for point in frame.get("positions", [])
+                         if isinstance(point, (list, tuple)) and len(point) >= 2
+                         and all(isfinite(float(value)) for value in point[:2])
+                         and abs(float(point[0])) <= 180 and abs(float(point[1])) <= 90]
+            if particles:
+                model_frames.append((frame_time, particles))
+        except (TypeError, ValueError, VesselMatchingInputError):
+            continue
+    model_frames.sort(key=lambda item: item[0])
+    model_frame_times = [item[0] for item in model_frames]
 
     grouped: dict[str, list[tuple[datetime, float, float, Any]]] = {}
     observation_list = list(observations)
@@ -369,13 +388,39 @@ def match_vessel_candidates(
                     closest_time = sample[0]
                     closest_accuracy = sample[3]
                     closest_method = "short-gap interpolated position"
-        if closest_km > search_radius_km:
+        corridor_closest_km: float | None = None
+        corridor_closest_time: datetime | None = None
+        if model_frames:
+            for timestamp, longitude, latitude, _ in positions:
+                insert_at = bisect_left(model_frame_times, timestamp)
+                nearby_indices = [index for index in (insert_at - 1, insert_at) if 0 <= index < len(model_frames)]
+                if not nearby_indices:
+                    continue
+                nearest_index = min(nearby_indices, key=lambda index: abs((model_frame_times[index] - timestamp).total_seconds()))
+                frame_time, particles = model_frames[nearest_index]
+                if abs((frame_time - timestamp).total_seconds()) > 3600:
+                    continue
+                distance = min(_haversine_km((longitude, latitude), particle) for particle in particles)
+                if corridor_closest_km is None or distance < corridor_closest_km:
+                    corridor_closest_km = distance
+                    corridor_closest_time = timestamp
+        if closest_km > search_radius_km and (corridor_closest_km is None or corridor_closest_km > search_radius_km):
             continue
 
         proximity_score = max(0.0, 100.0 * (1.0 - closest_km / search_radius_km))
         time_coverage_score = _coverage_score([item[0] for item in positions], start, end)
-        priority_score = SPATIAL_WEIGHT * proximity_score + TEMPORAL_WEIGHT * time_coverage_score
+        corridor_score = (max(0.0, 100.0 * (1.0 - corridor_closest_km / search_radius_km))
+                          if corridor_closest_km is not None else None)
+        priority_score = (
+            0.55 * proximity_score + 0.25 * time_coverage_score + 0.20 * corridor_score
+            if corridor_score is not None
+            else SPATIAL_WEIGHT * proximity_score + TEMPORAL_WEIGHT * time_coverage_score
+        )
         track = _track_geometry(positions)
+        track_positions = [
+            {"time": _utc_text(timestamp), "coordinates": [longitude, latitude]}
+            for timestamp, longitude, latitude, _ in positions
+        ]
 
         accuracy_count = sum(item[3] is not None for item in positions)
         quality_note = (
@@ -395,12 +440,16 @@ def match_vessel_candidates(
             + format(closest_km, ".1f")
             + " km from the modeled origin zone at " + _utc_text(closest_time)
             + " (" + closest_method + "). Short gaps are interpolated only when they are at most 30 minutes "
-            + "and the implied speed is at most 60 knots. The score is a screening priority, not a probability of responsibility."
+            + "and the implied speed is at most 60 knots."
+            + (" The closest time-matched model-path distance was " + format(corridor_closest_km, ".1f") + " km."
+               if corridor_closest_km is not None else " No time-matched particle path was available.")
+            + " The score is a screening priority, not a probability of responsibility."
         )
         candidates.append(
             {
                 "vessel_id": vessel_id,
                 "track": track,
+                "track_positions": track_positions,
                 "track_timestamps": [_utc_text(item[0]) for item in positions],
                 "position_accuracy_m": [item[3] for item in positions],
                 "closest_approach": {
@@ -413,13 +462,19 @@ def match_vessel_candidates(
                 "score_breakdown": {
                     "origin_proximity": {
                         "score": round(proximity_score, 1),
-                        "weight": SPATIAL_WEIGHT,
+                        "weight": 0.55 if corridor_score is not None else SPATIAL_WEIGHT,
                         "closest_approach_km": round(closest_km, 2),
                     },
                     "release_window_coverage": {
                         "score": round(time_coverage_score, 1),
-                        "weight": TEMPORAL_WEIGHT,
+                        "weight": 0.25 if corridor_score is not None else TEMPORAL_WEIGHT,
                         "meaning": "span between first and last reported positions; not continuous AIS coverage",
+                    },
+                    "particle_corridor_proximity": {
+                        "score": round(corridor_score, 1) if corridor_score is not None else None,
+                        "weight": 0.20 if corridor_score is not None else 0.0,
+                        "closest_approach_km": round(corridor_closest_km, 2) if corridor_closest_km is not None else None,
+                        "timestamp": _utc_text(corridor_closest_time) if corridor_closest_time is not None else None,
                     },
                 },
                 "data_quality_note": quality_note,
@@ -438,12 +493,13 @@ def match_vessel_candidates(
     provenance = result.setdefault("provenance", {})
     provenance["ais_data"] = [deepcopy(ais_source)] if ais_source else []
     provenance["ais_matching"] = {
-        "method": "origin-zone proximity plus short-gap AIS track interpolation and report-span score",
+        "method": "origin-zone proximity, time-matched particle corridor proximity, and AIS report-span score",
         "release_window": {"start": _utc_text(start), "end": _utc_text(end)},
         "search_radius_km": search_radius_km,
         "score_weights": {
-            "origin_proximity": SPATIAL_WEIGHT,
-            "release_window_coverage": TEMPORAL_WEIGHT,
+            "origin_proximity": 0.55 if model_frames else SPATIAL_WEIGHT,
+            "release_window_coverage": 0.25 if model_frames else TEMPORAL_WEIGHT,
+            "particle_corridor_proximity": 0.20 if model_frames else 0.0,
         },
         "ais_observations_received": total_observations,
         "ais_observations_in_release_window": in_window_count,
@@ -455,8 +511,8 @@ def match_vessel_candidates(
             "long_track_gaps_seconds": MAX_TRACK_GAP_SECONDS,
         },
         "limitation": (
-            "The current case format stores one origin-zone geometry, not a time-varying drift corridor. "
-            "Short AIS gaps are approximated linearly; longer gaps are not interpolated. This is a screening aid, not a trajectory match or source attribution."
+            "Particle positions are a sampled model corridor and depend on the supplied forcing and model assumptions. "
+            "Short AIS gaps are approximated linearly; longer gaps are not interpolated. Scores are screening priorities, not responsibility probabilities or source attribution."
         ),
     }
     return result

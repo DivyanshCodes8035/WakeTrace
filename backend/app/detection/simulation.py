@@ -105,6 +105,51 @@ def _distance_metres(first: tuple[float, float], second: tuple[float, float]) ->
     return float(np.hypot(east, north))
 
 
+def _patch_particle_offsets(
+    geometry: dict[str, Any],
+    center: tuple[float, float],
+    *,
+    count: int = 24,
+    seed: int = 42,
+) -> list[tuple[float, float]]:
+    """Place synthetic particles around the detected slick rim and across its interior."""
+    coordinates: list[tuple[float, float]] = []
+
+    def collect(value: Any) -> None:
+        if (isinstance(value, (list, tuple)) and len(value) >= 2
+                and all(isinstance(part, (int, float)) for part in value[:2])):
+            coordinates.append((float(value[0]), float(value[1])))
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                collect(child)
+
+    collect(geometry.get("coordinates"))
+    if not coordinates:
+        return [(0.0, 0.0)] * count
+    latitude_factor = cos(radians(center[1]))
+    radius_x = max(abs(lon - center[0]) * 111_320.0 * latitude_factor
+                   for lon, _ in coordinates)
+    radius_y = max(abs(lat - center[1]) * 110_574.0 for _, lat in coordinates)
+    radius_x = max(radius_x, 1.0)
+    radius_y = max(radius_y, 1.0)
+    edge_count = min(count, max(12, round(count * 2 / 3)))
+    interior_count = count - edge_count
+    pixel_offsets: list[tuple[float, float]] = []
+    for index in range(edge_count):
+        angle = 2 * np.pi * index / edge_count
+        wobble = 1 + 0.12 * np.sin(3 * angle + seed) + 0.06 * np.sin(5 * angle - seed)
+        pixel_offsets.append((radius_x * 0.94 * wobble * np.cos(angle),
+                              radius_y * 0.94 * wobble * np.sin(angle)))
+    golden_angle = np.pi * (3 - np.sqrt(5))
+    for index in range(interior_count):
+        angle = index * golden_angle + seed * 0.1
+        radius = 0.82 * np.sqrt((index + 0.5) / interior_count)
+        pixel_offsets.append((radius_x * radius * np.cos(angle),
+                              radius_y * radius * np.sin(angle)))
+
+    return pixel_offsets
+
+
 def _inject_dark_patch(geotiff: bytes, lon: float, lat: float, seed: int) -> tuple[bytes, dict[str, Any]]:
     """Return a modified in-memory GeoTIFF and the patch's raster pixel settings."""
     try:
@@ -177,8 +222,9 @@ def run_simulated_spill(
     observed = observed.astimezone(timezone.utc)
 
     duration_hours = 6
-    eastward_current_m_s = 0.12
-    northward_current_m_s = 0.03
+    offline_practice = scene_source.get("provider") == "WakeTrace synthetic practice generator"
+    eastward_current_m_s = 0.36 if offline_practice else 0.12
+    northward_current_m_s = 0.12 if offline_practice else 0.03
     elapsed = duration_hours * 3600
     slick_lon, slick_lat = _move_by_metres(
         source_lon, source_lat,
@@ -187,6 +233,14 @@ def run_simulated_spill(
     )
     modified_geotiff, injection_settings = _inject_dark_patch(geotiff, slick_lon, slick_lat, seed)
     start = observed - timedelta(hours=duration_hours)
+    animation_frames = []
+    for frame_index in range(duration_hours * 2 + 1):
+        fraction = frame_index / (duration_hours * 2)
+        frame_time = start + timedelta(seconds=elapsed * fraction)
+        animation_frames.append({
+            "time": frame_time.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "positions": [],
+        })
 
     with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as temporary:
         temporary.write(modified_geotiff)
@@ -212,6 +266,30 @@ def run_simulated_spill(
     # Real scenes can contain much larger dark land/coast features than the planted patch.
     # Use the screened candidate near the known synthetic patch, not the globally largest one.
     detected_center = nearest_feature[2] if nearest_feature and nearest_feature[0] <= 8_000 else None
+    detected_geometry = (detection["candidates"][nearest_feature[1]]["geometry"]
+                         if detected_center and nearest_feature else None)
+    particle_offsets = _patch_particle_offsets(
+        detected_geometry or {}, detected_center or (slick_lon, slick_lat), count=24, seed=seed,
+    )
+    motion_origin = (_move_by_metres(
+        detected_center[0], detected_center[1],
+        -eastward_current_m_s * elapsed, -northward_current_m_s * elapsed,
+    ) if detected_center else (source_lon, source_lat))
+    for frame_index, frame in enumerate(animation_frames):
+        fraction = frame_index / (duration_hours * 2)
+        frame_center = _move_by_metres(
+            motion_origin[0], motion_origin[1],
+            eastward_current_m_s * elapsed * fraction,
+            northward_current_m_s * elapsed * fraction,
+        )
+        frame["positions"] = [
+            [lon, lat]
+            for east_offset, north_offset in particle_offsets
+            for lon, lat in [_move_by_metres(
+                frame_center[0], frame_center[1],
+                east_offset * fraction, north_offset * fraction,
+            )]
+        ]
     estimated_source = (_move_by_metres(detected_center[0], detected_center[1],
                                         -eastward_current_m_s * elapsed,
                                         -northward_current_m_s * elapsed)
@@ -221,6 +299,11 @@ def run_simulated_spill(
         "release_window": {"start": start.isoformat().replace("+00:00", "Z"),
                            "end": observed.isoformat().replace("+00:00", "Z")},
         "origin_zone": _particle_zone(estimated_source[0], estimated_source[1], seed) if estimated_source else None,
+        "animation": {
+            "direction": "forward synthetic particle demonstration",
+            "frames": animation_frames if estimated_source else [],
+            "particle_count": len(particle_offsets) if estimated_source else 0,
+        },
         "ensemble_size": 20 if estimated_source else 0,
         "uncertainty_note": (
             "Synthetic exercise only. Twenty illustrative points surround the estimated origin. "
@@ -232,7 +315,9 @@ def run_simulated_spill(
         ),
         "provenance": {
             "input_sources": [{"provider": "synthetic simulation", "dataset": "fixed artificial wind and current",
-                               "description": "calm wind (0 m/s); current east 0.12 m/s and north 0.03 m/s; all invented for this exercise."}],
+                               "description": "calm wind (0 m/s); current east "
+                               + format(eastward_current_m_s, ".2f") + " m/s and north "
+                               + format(northward_current_m_s, ".2f") + " m/s; all invented for this exercise."}],
             "settings": {"direction": "forward injection plus synthetic reverse estimate",
                          "duration_hours": duration_hours, "ensemble_size": 20 if estimated_source else 0,
                          "wind_east_m_s": 0.0, "wind_north_m_s": 0.0,
@@ -243,18 +328,24 @@ def run_simulated_spill(
 
     candidates = []
     if estimated_source:
-        middle = start + timedelta(hours=duration_hours / 2)
         vessel_tracks = []
-        for vessel_id, offset_m in (("SIM-VESSEL-01", 0.0), ("SIM-VESSEL-02", 8_000.0)):
-            shifted_lon, shifted_lat = _move_by_metres(source_lon, source_lat, 0, offset_m)
-            vessel_tracks.extend([
-                {"vessel_id": vessel_id, "timestamp": start.isoformat().replace("+00:00", "Z"),
-                 "longitude": shifted_lon - 0.01, "latitude": shifted_lat},
-                {"vessel_id": vessel_id, "timestamp": middle.isoformat().replace("+00:00", "Z"),
-                 "longitude": shifted_lon, "latitude": shifted_lat},
-                {"vessel_id": vessel_id, "timestamp": observed.isoformat().replace("+00:00", "Z"),
-                 "longitude": shifted_lon + 0.01, "latitude": shifted_lat},
-            ])
+        routes = (
+            ("SIM-VESSEL-01", [(-9_000, 8_000), (18_000, -16_000)]),
+            ("SIM-VESSEL-02", [(-9_000, 12_000), (18_000, 21_000)]),
+        )
+        for vessel_id, (start_offset, end_offset) in routes:
+            for hour in range(duration_hours + 1):
+                fraction = hour / duration_hours
+                east_offset = start_offset[0] + (end_offset[0] - start_offset[0]) * fraction
+                north_offset = start_offset[1] + (end_offset[1] - start_offset[1]) * fraction
+                longitude, latitude = _move_by_metres(source_lon, source_lat, east_offset, north_offset)
+                timestamp = start + timedelta(hours=hour)
+                vessel_tracks.append({
+                    "vessel_id": vessel_id,
+                    "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
+                    "longitude": longitude,
+                    "latitude": latitude,
+                })
         from app.vessels.matching import match_vessel_candidates
         matched = match_vessel_candidates(
             {"drift": drift}, vessel_tracks,

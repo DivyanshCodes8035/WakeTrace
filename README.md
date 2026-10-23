@@ -45,6 +45,16 @@ a radar-style practice scene, inserts and screens a fictional dark patch, estima
 possible origin, and ranks invented vessel tracks without asking for coordinates. This is
 not real satellite imagery or evidence about a real spill or vessel.
 
+On the Map page, real drift results include a compact sample of OpenDrift particle positions.
+Playback starts automatically when drift paths are available. Pause or scrub the timeline while
+it runs; after it finishes, replay it from the map controls. The hindcast runs from the possible
+origin toward the observed feature. After matching an authorized, timestamped AIS CSV, vessel
+markers move along the same clock where reports support a continuous segment; long gaps remain
+visible as gaps. Candidate scores include proximity to the time-matched particle corridor
+alongside origin proximity and AIS report span. The offline practice route is animated too, but
+its current and vessel tracks are invented. Global Fishing Watch daily presence cells remain
+approximate markers and are not animated as vessel tracks.
+
 ## Search and show live satellite scenes
 
 The Map page searches the official Copernicus Sentinel-1 GRD catalog for an area and

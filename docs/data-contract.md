@@ -19,8 +19,12 @@ GeoJSON geometry containing the oldest backward ensemble positions (usually a Po
 it can be a LineString or Point for a degenerate ensemble). Coordinates remain
 `[longitude, latitude]`.
 
-Drift results also include `drift.provenance.input_sources`, an array identifying the wind and
-current forcing datasets used, and `drift.provenance.settings`, which records simulation
+Drift results may include `drift.animation.frames`, a compact playback sample with UTC `time`
+and per-particle `[longitude, latitude]` positions. The live OpenDrift response includes at
+most 72 frames and 96 particles; positions can be null when a particle is inactive. This is a
+visual sample of modeled trajectories, not additional observation data. Drift results also
+include `drift.provenance.input_sources`, an array identifying the wind and current forcing
+datasets used, and `drift.provenance.settings`, which records simulation
 direction, horizon, time step, requested/returned ensemble size, oil type assumption, and
 random seed. Input source entries should include enough detail to identify/retrieve the data,
 such as provider, dataset/version, and URL or file path. The OpenOil backtrack does not apply
@@ -33,7 +37,7 @@ forcing as synthetic and must not be added to a case record as incident data.
 
 ## Candidate shape (when candidates are added)
 
-Each `vessel_candidates` item should include a synthetic or authorized vessel identifier, a track as GeoJSON, a score breakdown with named factors, a data-quality note, and a plain-language explanation. A priority score is an investigation aid, not a probability of responsibility.
+Each `vessel_candidates` item should include a synthetic or authorized vessel identifier, a track as GeoJSON, timestamped `track_positions` for playback when available, a score breakdown with named factors, a data-quality note, and a plain-language explanation. A priority score is an investigation aid, not a probability of responsibility.
 ## AIS candidate screening
 
 The vessel matcher accepts AIS observations only when supplied by an authorized source. It does
@@ -42,22 +46,22 @@ not download AIS data or create candidate vessels. Each input observation has `v
 are validated as GeoJSON order `[longitude, latitude]`. Optional `position_accuracy_m` is retained
 as a data-quality signal. A source record supplied by the caller is copied to `provenance.ais_data`.
 
-The function screens in-window AIS positions against the case's static `drift.origin_zone`.
-Candidates outside the configured search radius are omitted. To avoid missing a pass between
+The function screens in-window AIS positions against `drift.origin_zone` and, when sampled
+`drift.animation.frames` are available, compares AIS positions with the nearest particle frame
+within one hour. Candidates outside the configured search radius of both are omitted. To avoid missing a pass between
 reports, it samples 19 estimated positions only when two adjacent AIS reports are at most 30 minutes
 apart and imply a speed no greater than 60 knots. Longer gaps are never filled for scoring. The
-priority score (0–100) is `0.75 × origin_proximity + 0.25 × release_window_span`; the span factor
-measures the time between the first and last report, not continuous AIS coverage. Both factor scores
+priority score (0–100) is `0.55 × origin_proximity + 0.25 × release_window_span + 0.20 × particle_corridor_proximity` when a time-matched particle frame is available; otherwise it uses `0.75 × origin_proximity + 0.25 × release_window_span`. The span factor
+measures the time between the first and last report, not continuous AIS coverage. Factor scores
 and weights are returned for review; the score is not a probability. Route lines break after gaps
 over two hours or implausible jumps. Each candidate includes its track, aligned `track_timestamps`
 and `position_accuracy_m` arrays, rank, closest-approach time and method, data-quality note, and
 plain-language explanation. Replay settings and counts are recorded under
 `provenance.ais_matching`.
 
-The current drift contract contains one origin-zone geometry and a release-time interval, not a
-time-varying drift corridor. Therefore the matcher is only a spatial-temporal screen: its short-gap
-interpolation is a straight-line estimate between two AIS reports, not an observed position or an
-OpenDrift trajectory match. It does not establish that a vessel released oil or caused a spill.
+The particle corridor is a sampled model trajectory and depends on its forcing and assumptions.
+Short AIS-gap interpolation is a straight-line estimate between two AIS reports, not an observed
+position. A trajectory match or high score does not establish that a vessel released oil or caused a spill.
 Sparse or missing AIS observations are not evidence that a vessel was absent. Real matching
 requires authorized, time-stamped AIS data and the corresponding provider/dataset details; the
 bundled synthetic case has no AIS observations, so its candidate list remains empty.

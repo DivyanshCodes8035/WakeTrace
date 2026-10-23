@@ -6,7 +6,8 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=22">
+    <link rel="stylesheet" href="styles.css?v=13">
+    <link rel="stylesheet" href="guided-demo.css?v=2">
   </head>
   <body>
     <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
@@ -114,19 +115,20 @@
       <section id="map-panel" class="map-panel panel map-page-panel" aria-labelledby="map-title">
         <div class="panel-heading map-heading">
           <div><h2 id="map-title">Area of interest</h2><p id="map-description" class="muted">Observed slick boundary and possible drift origin</p></div>
-          <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate track</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
+          <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-particles" hidden><i class="legend-swatch particles"></i>Modeled oil particles</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate route <span class="legend-vessel" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg></span>Ship / AIS position</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
         </div>
         <details class="plain-help map-help">
           <summary>What do the map symbols and terms mean?</summary>
           <div class="help-grid">
             <p><i class="legend-swatch slick"></i><strong>Amber outline:</strong> a possible dark radar feature selected for review. It is not proof of oil.</p>
             <p><i class="legend-swatch origin"></i><strong>Teal dashed area:</strong> a possible origin area estimated by the drift model. Its size shows uncertainty.</p>
-            <p><i class="legend-swatch track"></i><strong>Blue dashed line:</strong> a vessel route to compare with the time and area. It is a lead, not an accusation.</p>
+            <p><i class="legend-vessel" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg></i><strong>Ship icon:</strong> an AIS-reported vessel position. The dashed route connects observations; the larger moving ship shows the vessel at the current playback time.</p>
             <p><i class="legend-swatch simulated-source-swatch"></i><strong>Pink point:</strong> in practice mode, the invented release point used to check whether the exercise works.</p>
             <p><i class="legend-swatch simulated-slick-swatch"></i><strong>Teal center:</strong> the planted center of the practice patch, not a measured oil location.</p>
             <p><strong>Coordinates:</strong> choose an area to search. GeoJSON positions are written longitude first, then latitude; coordinates do not tell WakeTrace where a spill happened.</p>
             <p><strong>Radar image:</strong> grayscale radar brightness, not a normal camera photo. Some dark areas can look like oil but have other causes.</p>
             <p><strong>AIS:</strong> ship-position messages. Coverage can be incomplete, and some results are approximate daily areas.</p>
+            <p><strong>Playback:</strong> teal particles start moving when modeled paths load. Pause or scrub the timeline; candidate ship markers move only between timestamped AIS reports, and long gaps are left blank.</p>
           </div>
         </details>
         <div class="map-stage map-page-stage">
@@ -136,6 +138,12 @@
           <div id="map-message" class="map-message" role="status" aria-live="polite">Loading map…</div>
         </div>
         <p id="map-footnote" class="map-footnote">Choose a real scene to view its processed Sentinel-1 radar image. The one-click demo creates its own practice scene and sets the example location automatically.</p>
+        <div id="trajectory-controls" class="trajectory-controls" hidden>
+          <button id="trajectory-play" class="secondary-button" type="button">Play drift</button>
+          <label class="trajectory-scrubber" for="trajectory-range"><span>Possible release</span><input id="trajectory-range" type="range" min="0" max="0" value="0" step="1"><span>Slick observation</span></label>
+          <time id="trajectory-time" class="trajectory-time"></time>
+          <p id="trajectory-note" class="trajectory-note">Modeled particle playback. Track animation appears only for timestamped AIS observations.</p>
+        </div>
       </section>
       <section id="simulation-step" class="panel simulation-step" aria-live="polite" hidden>
         <div class="simulation-step-copy">
@@ -159,6 +167,7 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="case-data.js?v=2"></script>
-    <script src="map-page.js?v=27"></script>
+    <script src="map-page.js?v=37"></script>
+    <script src="guided-demo.js?v=1"></script>
   </body>
 </html>
