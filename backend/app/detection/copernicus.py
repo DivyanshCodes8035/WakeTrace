@@ -14,8 +14,8 @@ import rasterio
 from PIL import Image
 from rasterio.warp import transform_bounds
 
-STAC_SEARCH_URL = "https://stac.dataspace.copernicus.eu/v1/search"
-STAC_ITEM_URL = "https://stac.dataspace.copernicus.eu/v1/collections/sentinel-1-grd/items/{}"
+STAC_SEARCH_URL = "https://stac.opensearch.dataspace.copernicus.eu/v1/search"
+STAC_ITEM_URL = "https://stac.opensearch.dataspace.copernicus.eu/v1/collections/sentinel-1-grd/items/{}"
 TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 PROCESS_URL = "https://sh.dataspace.copernicus.eu/process/v1"
 
@@ -53,7 +53,7 @@ async def search_sentinel1(
         "sortby": [{"field": "properties.datetime", "direction": "desc"}],
     }
     try:
-        async with httpx.AsyncClient(timeout=35) as client:
+        async with httpx.AsyncClient(timeout=35, transport=httpx.AsyncHTTPTransport(retries=2)) as client:
             response = await client.post(STAC_SEARCH_URL, json=query)
             response.raise_for_status()
     except httpx.HTTPError as exc:
@@ -73,14 +73,27 @@ async def _access_token() -> str:
     if not client_id or not client_secret:
         raise RuntimeError("Add CDSE_CLIENT_ID and CDSE_CLIENT_SECRET to the project .env file to view satellite imagery.")
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(20.0, connect=8.0),
+            transport=httpx.AsyncHTTPTransport(retries=2),
+        ) as client:
             response = await client.post(
                 TOKEN_URL,
                 data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret},
             )
             response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise RuntimeError("Copernicus authentication failed. Check the OAuth client credentials in .env.") from exc
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {400, 401}:
+            raise RuntimeError(
+                "Copernicus rejected the OAuth client credentials (HTTP "
+                + str(exc.response.status_code)
+                + "). Check CDSE_CLIENT_ID and CDSE_CLIENT_SECRET in the project .env."
+            ) from exc
+        raise RuntimeError("Copernicus OAuth returned HTTP " + str(exc.response.status_code) + ". Try again shortly.") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(
+            "Could not connect to the Copernicus OAuth service (" + type(exc).__name__ + "). Try again shortly."
+        ) from exc
     token_data = response.json()
     _cached_token = token_data["access_token"]
     _token_expires_at = time.monotonic() + max(60, int(token_data.get("expires_in", 3600)) - 90)
@@ -94,7 +107,7 @@ async def process_sentinel1_scene(
     if not scene_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-" for char in scene_id):
         raise ValueError("Invalid Copernicus scene identifier.")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, transport=httpx.AsyncHTTPTransport(retries=2)) as client:
             item_response = await client.get(STAC_ITEM_URL.format(scene_id))
             item_response.raise_for_status()
         item = item_response.json()
@@ -150,7 +163,12 @@ function evaluatePixel(s) {{
     }
     token = await _access_token()
     try:
-        async with httpx.AsyncClient(timeout=180) as client:
+        # Keep the interactive map responsive if Sentinel Hub is unreachable;
+        # the frontend can then offer its Copernicus Browser fallback promptly.
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(25.0, connect=8.0),
+            transport=httpx.AsyncHTTPTransport(retries=2),
+        ) as client:
             response = await client.post(PROCESS_URL, json=request, headers={"Authorization": "Bearer " + token})
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:

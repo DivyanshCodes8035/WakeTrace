@@ -1,6 +1,7 @@
 """Fetch replayable wind/current subsets from Copernicus Marine for OpenDrift."""
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,24 @@ def fetch_readers(
         raise RuntimeError(
             "Real drift needs the Copernicus Marine Toolbox. Install backend requirements first."
         ) from exc
+
+    has_environment_credentials = bool(
+        os.getenv("COPERNICUSMARINE_SERVICE_USERNAME") and os.getenv("COPERNICUSMARINE_SERVICE_PASSWORD")
+    )
+    credentials_directory = Path(
+        os.getenv("COPERNICUSMARINE_CREDENTIALS_DIRECTORY", str(Path.home() / ".copernicusmarine"))
+    )
+    credential_files = [
+        credentials_directory / ".copernicusmarine-credentials",
+        Path.home() / ".netrc",
+        Path.home() / "_netrc",
+        Path.home() / "motuclient" / "motuclient-python.ini",
+    ]
+    if not has_environment_credentials and not any(path.is_file() for path in credential_files):
+        raise RuntimeError(
+            "Copernicus Marine is not logged in for this computer. From the backend folder, "
+            "run `copernicusmarine login` once, finish the login in that terminal, then restart WakeTrace."
+        )
 
     coordinates = geometry.get("coordinates") or []
     if geometry.get("type") == "Polygon":

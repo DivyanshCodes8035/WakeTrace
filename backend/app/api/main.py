@@ -20,8 +20,9 @@ from pydantic import BaseModel, Field
 from app.detection.copernicus import make_scene_preview, process_sentinel1_scene, search_sentinel1
 from app.detection.sar import DetectionInputError, detect_sar_dark_features
 from app.detection.simulation import make_offline_practice_scene, run_simulated_spill
-from app.drift.copernicus_forcing import fetch_readers
+from app.drift.open_meteo_forcing import fetch_readers
 from app.drift.simulation import DriftInputError, estimate_origin
+from app.vessels.gfw_presence import AISPresenceError, search_gfw_presence
 from app.vessels.matching import VesselMatchingInputError, match_vessel_candidates
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -126,6 +127,10 @@ class AISMatchRequest(BaseModel):
     dataset: str = Field(min_length=2, max_length=160)
     filename: str = Field(min_length=1, max_length=255)
     csv_text: str = Field(min_length=1, max_length=25_000_000)
+
+
+class AISPresenceRequest(BaseModel):
+    drift: dict[str, Any]
 
 
 def _validated_bbox(values: list[float], max_span: float = 5.0) -> list[float]:
@@ -291,15 +296,24 @@ def _run_real_drift(selection: DriftSelection) -> dict[str, Any]:
             backtrack_hours=selection.backtrack_hours,
             output_directory=Path(directory),
         )
-        return estimate_origin(
-            selection.geometry,
-            observed,
-            readers=readers,
-            input_sources=sources,
-            backtrack_hours=selection.backtrack_hours,
-            ensemble_size=selection.ensemble_size,
-            random_seed=selection.seed,
-        )
+        try:
+            return estimate_origin(
+                selection.geometry,
+                observed,
+                readers=readers,
+                input_sources=sources,
+                backtrack_hours=selection.backtrack_hours,
+                ensemble_size=selection.ensemble_size,
+                random_seed=selection.seed,
+            )
+        finally:
+            # OpenDrift's NetCDF readers keep file handles open. Close them
+            # before TemporaryDirectory cleanup, especially on Windows.
+            for reader in readers:
+                dataset = getattr(reader, "Dataset", None)
+                close = getattr(dataset, "close", None)
+                if callable(close):
+                    close()
 
 
 @app.post("/api/satellite/scenes/{scene_id}/drift")
@@ -324,7 +338,7 @@ async def satellite_scene_drift(scene_id: str, selection: DriftSelection) -> dic
     )
     return {
         "drift": drift,
-        "note": "OpenDrift backtracked the selected SAR feature using Copernicus Marine wind and current reanalysis. The feature is not confirmed oil, and this result does not identify a vessel.",
+        "note": "OpenDrift backtracked the selected SAR feature using public Open-Meteo ERA5 wind and ERA5-Ocean current reanalysis. The feature is not confirmed oil, and this result does not identify a vessel.",
     }
 
 
@@ -356,3 +370,12 @@ async def match_uploaded_ais(request: AISMatchRequest) -> dict[str, Any]:
         "provenance": result["provenance"],
         "note": "These are AIS proximity leads only. AIS gaps are not evidence of absence, and the score is not a probability of responsibility.",
     }
+
+
+@app.post("/api/vessels/search-presence")
+async def search_automatic_ais_presence(request: AISPresenceRequest) -> dict[str, Any]:
+    """Fetch aggregated public AIS-presence leads for the modeled origin area."""
+    try:
+        return await search_gfw_presence(request.drift)
+    except AISPresenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

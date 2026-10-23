@@ -85,6 +85,44 @@ function bboxFromForm(form) {
   return ["west", "south", "east", "north"].map((name) => Number(form.elements[name].value));
 }
 
+function copernicusBrowserUrl(scene, polarization = "VV") {
+  const [west, south, east, north] = scene.bbox || [];
+  const lat = Number.isFinite((south + north) / 2) ? (south + north) / 2 : 0;
+  const lng = Number.isFinite((west + east) / 2) ? (west + east) / 2 : 0;
+  const mode = String(scene.mode || "IW").toUpperCase();
+  const available = (scene.polarizations || []).map((value) => String(value).toUpperCase());
+  const selectedPol = String(polarization || "VV").toUpperCase();
+  const verticalPair = available.includes("VV") && available.includes("VH");
+  const horizontalPair = available.includes("HH") && available.includes("HV");
+  const paired = verticalPair || horizontalPair;
+  const modeCode = ["IW", "EW", "SM"].includes(mode) ? mode : "IW";
+  const pairCode = verticalPair ? "VVVH" : "HHHV";
+  const datasetId = "S1_CDAS_" + modeCode + (paired ? "_" + pairCode : "_" + (available[0] || selectedPol));
+  const polarizationMode = verticalPair || available.includes("VV") ? "DV" : (horizontalPair ? "DH" : "SH");
+  const layerPrefix = modeCode + "-" + polarizationMode + "-";
+  const layerPolarization = selectedPol === "VH" && paired ? "VH" : (available.includes(selectedPol) ? selectedPol : available[0] || "VV");
+  const layerId = layerPrefix + layerPolarization + "-DECIBEL-GAMMA0-ORTHORECTIFIED";
+  const acquired = new Date(scene.datetime || scene.start_datetime || Date.now());
+  const dayEnd = new Date(Date.UTC(acquired.getUTCFullYear(), acquired.getUTCMonth(), acquired.getUTCDate(), 23, 59, 59, 999)).toISOString();
+  const url = new URL("https://browser.dataspace.copernicus.eu/");
+  url.search = new URLSearchParams({
+    zoom: "8", lat: String(lat), lng: String(lng), themeId: "DEFAULT-THEME",
+    datasetId, layerId, toTime: dayEnd, dateMode: "SINGLE",
+  }).toString();
+  return url.toString();
+}
+
+function addCopernicusBrowserLink(container, scene, polarization, label = "Open this date in Copernicus Browser") {
+  const link = document.createElement("a");
+  link.className = "scene-select-button scene-browser-link";
+  link.href = copernicusBrowserUrl(scene, polarization);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = label;
+  container.append(link);
+  return link;
+}
+
 function textNode(tag, text, className) {
   const node = document.createElement(tag);
   node.textContent = text;
@@ -254,7 +292,11 @@ searchForm.addEventListener("submit", async (event) => {
       const select = textNode("button", "Show image + screen", "scene-select-button");
       select.type = "button";
       select.addEventListener("click", () => showScene(scene, form, status, select));
-      card.append(details, select);
+      const actions = document.createElement("div");
+      actions.className = "scene-result-actions";
+      actions.append(select);
+      addCopernicusBrowserLink(actions, scene, form.elements.polarization.value, "View in Copernicus Browser");
+      card.append(details, actions);
       results.append(card);
     });
     if (form.dataset.autoSelectNewest === "true") {
@@ -394,12 +436,71 @@ async function showScene(scene, form, status, button) {
       $("map-message").hidden = false;
     }
   } catch (error) {
-    status.textContent = error.message;
-    $("map-message").textContent = "Image could not be loaded: " + error.message;
-    $("map-message").hidden = false;
+    try {
+      await showCatalogQuicklook(scene, form, status, error.message);
+    } catch (fallbackError) {
+      status.textContent = error.message;
+      const message = $("map-message");
+      message.replaceChildren(document.createTextNode("WakeTrace cannot load the image service right now. " + fallbackError.message + " Open the same real Sentinel-1 date and location in Copernicus Browser instead: "));
+      addCopernicusBrowserLink(message, scene, form.elements.polarization.value, "Open real Sentinel-1 scene");
+      $("map-message").hidden = false;
+    }
   } finally {
     button.disabled = false;
   }
+}
+
+async function showCatalogQuicklook(scene, form, status, processingError) {
+  if (!map || !scene.item_url || !Array.isArray(scene.bbox) || scene.bbox.length < 4) {
+    throw new Error("This scene has no usable quicklook link or map bounds.");
+  }
+  const image = new Image();
+  await new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error("The Copernicus quicklook took too long to load.")), 8000);
+    image.onload = () => { window.clearTimeout(timeout); resolve(); };
+    image.onerror = () => { window.clearTimeout(timeout); reject(new Error("The Copernicus quicklook link is unavailable from this browser.")); };
+    image.src = scene.item_url;
+  });
+
+  const [west, south, east, north] = scene.bbox;
+  const bounds = [[south, west], [north, east]];
+  selectedScene = scene;
+  selectedSceneBounds = bboxFromForm(form);
+  layers.clearLayers();
+  if (sceneOverlay) map.removeLayer(sceneOverlay);
+  sceneOverlay = L.imageOverlay(scene.item_url, bounds, { opacity: 0.96 }).addTo(map);
+  map.fitBounds(bounds, { padding: [28, 28], maxZoom: 10 });
+
+  const acquired = scene.datetime || scene.start_datetime;
+  $("scene-source").textContent = "Copernicus Data Space · " + scene.id;
+  $("scene-kind").textContent = "SENTINEL-1 QUICKLOOK";
+  $("scene-acquired").textContent = "Acquired · " + WakeTraceCase.formatUtc(acquired);
+  $("scene-preview").src = scene.item_url;
+  $("scene-preview").alt = "Copernicus Sentinel-1 radar quicklook for " + scene.id;
+  $("scene-preview").hidden = false;
+  $("scene-preview-status").hidden = true;
+  $("case-badge").textContent = "LIVE COPERNICUS SCENE";
+  $("case-badge").classList.add("real-case-badge");
+  $("case-title").textContent = "Sentinel-1 scene review";
+  $("case-subtitle").textContent = "Real radar observation · " + WakeTraceCase.formatUtc(acquired);
+  $("case-notice").textContent = "Real Copernicus radar quicklook shown. Automatic slick screening and pixel-level analysis did not run because the image-processing service is unavailable. This preview alone does not confirm oil.";
+  $("case-notice").hidden = false;
+  $("real-detection-results").hidden = true;
+  $("real-drift-output").hidden = true;
+  $("save-real-case").hidden = true;
+  $("simulation-panel").hidden = true;
+  $("legend-slick").hidden = true;
+  $("legend-dark-features").hidden = true;
+  $("legend-origin").hidden = true;
+  $("legend-track").hidden = true;
+  $("legend-scene").hidden = false;
+  $("legend-scene").lastChild.textContent = "Copernicus Sentinel-1 quicklook";
+  $("map-description").textContent = "Real Sentinel-1 quicklook · automatic image screening unavailable";
+  $("map-footnote").textContent = "Showing the real Copernicus scene thumbnail over its geographic extent. The image-processing service failed: " + processingError;
+  $("map-message").textContent = "Real satellite quicklook loaded. Automatic slick detection did not run.";
+  addCopernicusBrowserLink($("map-message"), scene, form.elements.polarization.value);
+  $("map-message").hidden = false;
+  status.textContent = "Showing the real Copernicus quicklook. Automatic slick screening is unavailable until image processing can connect.";
 }
 
 async function estimateRealDrift(candidate, button) {
@@ -407,7 +508,7 @@ async function estimateRealDrift(candidate, button) {
   const status = $("real-drift-status");
   button.disabled = true;
   document.querySelectorAll("#real-candidate-list button").forEach((item) => { item.disabled = true; });
-  status.textContent = "Getting real Copernicus wind and current data, then backtracking an OpenDrift ensemble… This may take a few minutes.";
+  status.textContent = "Getting public historical wind and current data, then backtracking an OpenDrift ensemble… This may take a few minutes.";
   $("real-drift-output").hidden = true;
   try {
     const response = await fetch(apiRoot() + "/api/satellite/scenes/" + encodeURIComponent(selectedScene.id) + "/drift", {
@@ -436,17 +537,81 @@ async function estimateRealDrift(candidate, button) {
     $("real-drift-output").hidden = false;
     window.currentRealDrift = result.drift;
     window.realCaseData.drift = result.drift;
-    $("real-ais-form").hidden = false;
-    $("real-ais-status").hidden = true;
+    $("real-ais-auto").hidden = false;
+    $("manual-ais-review").hidden = false;
+    $("real-ais-status").hidden = false;
     $("real-ais-candidates").replaceChildren();
     status.textContent = result.note;
     map.fitBounds(window.realOriginLayer.getBounds(), { padding: [40, 40], maxZoom: 11 });
+    await searchAutomaticAISPresence(result.drift);
   } catch (error) {
     status.textContent = error.message;
   } finally {
     document.querySelectorAll("#real-candidate-list button").forEach((item) => { item.disabled = false; });
   }
 }
+
+async function searchAutomaticAISPresence(drift) {
+  const button = $("search-ais-presence");
+  const status = $("real-ais-status");
+  if (window.gfwPresenceLayer && layers) layers.removeLayer(window.gfwPresenceLayer);
+  window.gfwPresenceLayer = L.layerGroup();
+  if (layers) window.gfwPresenceLayer.addTo(layers);
+  button.disabled = true;
+  status.hidden = false;
+  status.textContent = "Searching Global Fishing Watch for vessel presence near the possible origin…";
+  $("real-ais-candidates").replaceChildren();
+  try {
+    const response = await fetch(apiRoot() + "/api/vessels/search-presence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drift }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Automatic AIS presence search failed.");
+    result.presence_cells.forEach((presence, index) => {
+      const vesselLabel = presence.ship_name || presence.vessel_id || presence.mmsi || "Vessel presence cell " + (index + 1);
+      const card = document.createElement("article");
+      card.className = "candidate-card";
+      const title = textNode("strong", vesselLabel, "scene-title");
+      const details = [presence.date || "date not supplied"];
+      if (presence.vessel_type) details.push(presence.vessel_type);
+      if (presence.flag) details.push("flag " + presence.flag);
+      if (presence.mmsi) details.push("MMSI " + presence.mmsi);
+      details.push(presence.vessel_count + " vessel ID(s) in grid cell");
+      details.push(Number(presence.hours).toFixed(1) + " presence-hours");
+      const description = textNode("p", details.join(" · "));
+      const quality = textNode("p", "Approximate cell center: " + presence.longitude.toFixed(3) + ", " + presence.latitude.toFixed(3) + ". Daily aggregated AIS presence, not a precise ship position or route.", "muted");
+      card.append(title, description, quality);
+      $("real-ais-candidates").append(card);
+      if (map && layers) {
+        L.circleMarker([presence.latitude, presence.longitude], {
+          radius: 7, color: "#ffffff", weight: 2, fillColor: "#f2a84a", fillOpacity: 0.92,
+        }).bindPopup("GFW AIS presence · " + vesselLabel + " · " + (presence.date || "date unavailable") + " · approximate daily grid cell, not a track").addTo(window.gfwPresenceLayer);
+      }
+    });
+    window.realCaseData.ais_presence = result;
+    status.textContent = result.presence_cells.length
+      ? result.presence_cells.length + " aggregated AIS presence cell(s) found. " + result.note
+      : "No AIS vessel-presence cells were returned for this area and date range. That does not prove no vessels were present. " + result.note;
+  } catch (error) {
+    status.replaceChildren(document.createTextNode(error.message + " "));
+    if (error.message.includes("Global Fishing Watch API token")) {
+      const link = document.createElement("a");
+      link.href = "https://globalfishingwatch.org/our-apis/";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Get a free API token";
+      status.append(link, document.createTextNode(". Add it as GFW_API_TOKEN in the project-root .env file and restart the backend."));
+    }
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("search-ais-presence").addEventListener("click", () => {
+  if (window.currentRealDrift) searchAutomaticAISPresence(window.currentRealDrift);
+});
 
 $("real-ais-form").addEventListener("submit", async (event) => {
   event.preventDefault();

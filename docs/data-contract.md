@@ -43,16 +43,21 @@ are validated as GeoJSON order `[longitude, latitude]`. Optional `position_accur
 as a data-quality signal. A source record supplied by the caller is copied to `provenance.ais_data`.
 
 The function screens in-window AIS positions against the case's static `drift.origin_zone`.
-Candidates outside the configured search radius are omitted. The priority score (0–100) is
-`0.75 × origin_proximity + 0.25 × release_window_coverage`; both factor scores and weights are
-returned for review. This score is not a probability. The track geometry, aligned
-`track_timestamps` and `position_accuracy_m` arrays, rank, closest approach, data-quality note, and
-plain-language explanation are returned for each candidate.
-Replay settings and counts are recorded under `provenance.ais_matching`.
+Candidates outside the configured search radius are omitted. To avoid missing a pass between
+reports, it samples 19 estimated positions only when two adjacent AIS reports are at most 30 minutes
+apart and imply a speed no greater than 60 knots. Longer gaps are never filled for scoring. The
+priority score (0–100) is `0.75 × origin_proximity + 0.25 × release_window_span`; the span factor
+measures the time between the first and last report, not continuous AIS coverage. Both factor scores
+and weights are returned for review; the score is not a probability. Route lines break after gaps
+over two hours or implausible jumps. Each candidate includes its track, aligned `track_timestamps`
+and `position_accuracy_m` arrays, rank, closest-approach time and method, data-quality note, and
+plain-language explanation. Replay settings and counts are recorded under
+`provenance.ais_matching`.
 
 The current drift contract contains one origin-zone geometry and a release-time interval, not a
-time-varying drift corridor. Therefore the matcher is only a coarse spatial-temporal screen: it
-does not establish that a vessel crossed a modeled trajectory, released oil, or caused a spill.
+time-varying drift corridor. Therefore the matcher is only a spatial-temporal screen: its short-gap
+interpolation is a straight-line estimate between two AIS reports, not an observed position or an
+OpenDrift trajectory match. It does not establish that a vessel released oil or caused a spill.
 Sparse or missing AIS observations are not evidence that a vessel was absent. Real matching
 requires authorized, time-stamped AIS data and the corresponding provider/dataset details; the
 bundled synthetic case has no AIS observations, so its candidate list remains empty.
@@ -105,14 +110,18 @@ does not run automatically. Start the API with `python -m uvicorn app.api.main:a
 
 
 
-## Live Copernicus Marine drift input
+## Historical forcing used by OpenDrift
 
-For a selected Sentinel-1 candidate, `POST /api/satellite/scenes/{scene_id}/drift` retrieves small time/area subsets and runs the OpenDrift OpenOil backtrack. The current source is `cmems_obs-mob_glo_phy-cur_my_0.25deg_PT1H-i` (variables `uo`, `vo`; hourly total surface current analysis including geostrophic, Ekman and tidal components). The wind source is `cmems_obs-wind_glo_phy_my_l4_0.125deg_PT1H` (variables `eastward_wind`, `northward_wind`; hourly 10 m wind reanalysis corrected using scatterometer observations).
+For a selected Sentinel-1 candidate, `POST /api/satellite/scenes/{scene_id}/drift` retrieves public historical forcing and runs the OpenDrift OpenOil backtrack. To avoid a separate account setup, it uses Open-Meteo's ERA5-Ocean hourly current velocity/direction and ERA5 hourly 10 m wind speed/direction. Current directions are converted to east/north components; wind directions are converted from meteorological “from” direction to east/north components. No forcing values are invented.
 
-Each `drift.provenance.input_sources` entry records provider, product, dataset, URL, variables, requested UTC range, area and resolution note. `drift.provenance.settings` records model parameters and selected scene. A Copernicus Marine Toolbox login is required; the API does not fall back to synthetic forcing. Data coverage may lag the latest Sentinel-1 scenes. Wind and current grids differ, and missing waves, local circulation, coastline resolution, oil properties and forcing uncertainty must be considered. Live results remain temporary until an analyst reviews and saves them to a case.
+Each `drift.provenance.input_sources` entry records provider, product, dataset, URL, variables, requested UTC range, area and resolution note. `drift.provenance.settings` records model parameters and selected scene. ERA5-Ocean currents are approximately 0.5 degree (~50 km) and ERA5 winds approximately 0.25 degree (~25 km), so the modeled origin is a broad estimate; local coastal circulation, waves, shoreline processes, oil properties and forcing uncertainty are not fully represented. Open-Meteo data should be attributed to Open-Meteo and its upstream sources. Live results remain temporary until an analyst reviews and saves them to a case.
 
-Vessel matching does not run automatically from this endpoint. It requires genuine, authorized, time-stamped AIS observations covering the release window. Simulated practice tracks must never be reused as incident evidence.
+After a real drift estimate, the map automatically calls `POST /api/vessels/search-presence` to query Global Fishing Watch's `public-global-presence:latest` AIS-presence report for the modeled origin polygon and release dates. Configure a Global Fishing Watch API token as `GFW_API_TOKEN` in the ignored project-root `.env`; get a token from [Global Fishing Watch API access](https://globalfishingwatch.org/our-apis/). The token stays on the backend. The endpoint records provider, dataset, query geometry and dates, 0.01-degree requested grid resolution, and daily time aggregation in `ais_presence.provenance`.
 
-The live UI can submit a CSV to `POST /api/vessels/match` after a drift estimate. Required columns are `vessel_id`, `timestamp`, `longitude`, and `latitude`; optional `position_accuracy_m` is retained by the matcher. The analyst must enter the actual AIS provider and dataset name. See `docs/data/ais-template.csv` for the header. This endpoint does not download AIS data and must not be supplied with synthetic practice tracks.
+This automatic source returns aggregated daily grid-cell presence. A cell center is an approximate location; its vessel count may represent multiple vessels, and a row may not include an individual vessel identity. It is not a raw AIS track and cannot support exact closest-approach timing. WakeTrace displays those results as approximate presence markers, never route lines. GFW documents AIS vessel presence as a gridded dataset and warns that it is not a vessel track ([4Wings API](https://globalfishingwatch.org/our-apis/documentation/docs/v3/4wings), [report endpoint](https://globalfishingwatch.org/our-apis/documentation/docs/v3/4wings/report)). Data availability and report limits depend on GFW. No presence result does not prove a vessel was absent.
+
+The detailed CSV matcher remains available when an analyst has authorized, time-stamped AIS observations. Simulated practice tracks must never be reused as incident evidence.
+
+The live UI can submit a CSV to `POST /api/vessels/match` after a drift estimate. Required columns are `vessel_id`, `timestamp`, `longitude`, and `latitude`; optional `position_accuracy_m` is retained by the matcher. The analyst must enter the actual AIS provider and dataset name. See `docs/data/ais-template.csv` for the header. This detailed-track endpoint does not download raw AIS data and must not be supplied with synthetic practice tracks.
 
 `POST /api/cases` saves the reviewed, real-data case JSON under `data/cases/`; `GET /api/cases/{case_id}` loads either the synthetic fixture or a saved case. The SAR quicklook image is excluded from saved JSON to keep case files small. Saved case files are ignored by Git by default.

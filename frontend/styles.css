@@ -471,6 +471,9 @@ body {
 .scene-result-card .scene-product-id { color: #64798a; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; overflow-wrap: anywhere; }
 .scene-select-button { flex: none; min-height: 38px; padding: 7px 11px; border: 1px solid #0d5965; border-radius: 8px; background: #0d5965; color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .scene-select-button:hover { background: #084650; }
+.scene-result-actions { display: grid; flex: none; gap: 7px; min-width: 178px; }
+.scene-browser-link { display: inline-flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; }
+.map-message .scene-browser-link { display: inline-flex; margin: 8px 4px 0; }
 .scene-select-button:focus-visible { outline: 3px solid #e2a841; outline-offset: 2px; }
 .scene-select-button:disabled { cursor: progress; opacity: .6; }
 .legend-swatch.scene-raster { border: 1px solid #788d97; background: linear-gradient(135deg, #243b46, #c7d0d1); }

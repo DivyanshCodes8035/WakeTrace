@@ -13,6 +13,10 @@ from typing import Any, Iterable
 EARTH_RADIUS_KM = 6371.0088
 SPATIAL_WEIGHT = 0.75
 TEMPORAL_WEIGHT = 0.25
+MAX_INTERPOLATION_GAP_SECONDS = 30 * 60
+MAX_TRACK_GAP_SECONDS = 2 * 60 * 60
+MAX_PLAUSIBLE_SPEED_KNOTS = 60.0
+INTERPOLATION_STEPS = 20
 
 
 class VesselMatchingInputError(ValueError):
@@ -231,6 +235,60 @@ def _coverage_score(times: list[datetime], start: datetime, end: datetime) -> fl
     return min(100.0, (overlap_end - overlap_start).total_seconds() / (end - start).total_seconds() * 100)
 
 
+def _interpolate_position(
+    first: tuple[datetime, float, float, Any],
+    second: tuple[datetime, float, float, Any],
+    fraction: float,
+) -> tuple[datetime, float, float, float | None]:
+    first_time, first_lon, first_lat, first_accuracy = first
+    second_time, second_lon, second_lat, second_accuracy = second
+    delta_lon = (second_lon - first_lon + 180) % 360 - 180
+    longitude = (first_lon + delta_lon * fraction + 180) % 360 - 180
+    latitude = first_lat + (second_lat - first_lat) * fraction
+    timestamp = first_time + (second_time - first_time) * fraction
+    accuracy = None
+    if first_accuracy is not None and second_accuracy is not None:
+        accuracy = first_accuracy + (second_accuracy - first_accuracy) * fraction
+    return timestamp, longitude, latitude, accuracy
+
+
+def _track_geometry(positions: list[tuple[datetime, float, float, Any]]) -> dict[str, Any]:
+    """Draw only plausible segments across short gaps; preserve isolated fixes as points."""
+    lines: list[list[list[float]]] = []
+    isolated: list[list[float]] = []
+    current: list[list[float]] = []
+    previous = None
+    for position in positions:
+        point = [position[1], position[2]]
+        if previous is None:
+            current = [point]
+            previous = position
+            continue
+        gap = (position[0] - previous[0]).total_seconds()
+        speed_knots = _haversine_km((previous[1], previous[2]), (position[1], position[2])) / max(gap / 3600, 1e-9) / 1.852
+        if 0 < gap <= MAX_TRACK_GAP_SECONDS and speed_knots <= MAX_PLAUSIBLE_SPEED_KNOTS:
+            current.append(point)
+        else:
+            if len(current) >= 2:
+                lines.append(current)
+            else:
+                isolated.extend(current)
+            current = [point]
+        previous = position
+    if len(current) >= 2:
+        lines.append(current)
+    else:
+        isolated.extend(current)
+    geometries = []
+    if lines:
+        geometries.append({"type": "MultiLineString", "coordinates": lines})
+    if isolated:
+        geometries.append({"type": "MultiPoint", "coordinates": isolated})
+    if len(geometries) == 1:
+        return geometries[0]
+    return {"type": "GeometryCollection", "geometries": geometries}
+
+
 def match_vessel_candidates(
     case: dict[str, Any],
     observations: Iterable[dict[str, Any]],
@@ -291,18 +349,33 @@ def match_vessel_candidates(
         ]
         closest_index = min(range(len(distances)), key=distances.__getitem__)
         closest_km = distances[closest_index]
+        closest_time = positions[closest_index][0]
+        closest_accuracy = positions[closest_index][3]
+        closest_method = "recorded AIS position"
+        interpolated_segments = 0
+        for first, second in zip(positions, positions[1:]):
+            gap_seconds = (second[0] - first[0]).total_seconds()
+            if not 0 < gap_seconds <= MAX_INTERPOLATION_GAP_SECONDS:
+                continue
+            speed_knots = _haversine_km((first[1], first[2]), (second[1], second[2])) / (gap_seconds / 3600) / 1.852
+            if speed_knots > MAX_PLAUSIBLE_SPEED_KNOTS:
+                continue
+            interpolated_segments += 1
+            for step in range(1, INTERPOLATION_STEPS):
+                sample = _interpolate_position(first, second, step / INTERPOLATION_STEPS)
+                distance = _distance_to_origin_km((sample[1], sample[2]), origin_points, polygons, origin_zone)
+                if distance < closest_km:
+                    closest_km = distance
+                    closest_time = sample[0]
+                    closest_accuracy = sample[3]
+                    closest_method = "short-gap interpolated position"
         if closest_km > search_radius_km:
             continue
 
         proximity_score = max(0.0, 100.0 * (1.0 - closest_km / search_radius_km))
         time_coverage_score = _coverage_score([item[0] for item in positions], start, end)
         priority_score = SPATIAL_WEIGHT * proximity_score + TEMPORAL_WEIGHT * time_coverage_score
-        coordinates = [[item[1], item[2]] for item in positions]
-        track = (
-            {"type": "Point", "coordinates": coordinates[0]}
-            if len(coordinates) == 1
-            else {"type": "LineString", "coordinates": coordinates}
-        )
+        track = _track_geometry(positions)
 
         accuracy_count = sum(item[3] is not None for item in positions)
         quality_note = (
@@ -312,12 +385,17 @@ def match_vessel_candidates(
         )
         if len(positions) == 1:
             quality_note += " A single position cannot establish route continuity."
+        quality_note += (
+            " Short gaps were interpolated only up to 30 minutes; the map breaks route lines after "
+            "2-hour gaps or implausible jumps."
+        )
         explanation = (
-            "AIS observations fall inside the drift release window. The closest recorded position "
+            "AIS observations fall inside the drift release window. The closest recorded or short-gap interpolated position "
             + "was "
             + format(closest_km, ".1f")
-            + " km from the modeled origin zone. The priority score uses only spatial proximity "
-            + "and time coverage; it is not a probability of responsibility."
+            + " km from the modeled origin zone at " + _utc_text(closest_time)
+            + " (" + closest_method + "). Short gaps are interpolated only when they are at most 30 minutes "
+            + "and the implied speed is at most 60 knots. The score is a screening priority, not a probability of responsibility."
         )
         candidates.append(
             {
@@ -325,6 +403,12 @@ def match_vessel_candidates(
                 "track": track,
                 "track_timestamps": [_utc_text(item[0]) for item in positions],
                 "position_accuracy_m": [item[3] for item in positions],
+                "closest_approach": {
+                    "distance_km": round(closest_km, 2),
+                    "timestamp": _utc_text(closest_time),
+                    "method": closest_method,
+                    "position_accuracy_m": round(closest_accuracy, 1) if closest_accuracy is not None else None,
+                },
                 "priority_score": round(priority_score, 1),
                 "score_breakdown": {
                     "origin_proximity": {
@@ -335,9 +419,11 @@ def match_vessel_candidates(
                     "release_window_coverage": {
                         "score": round(time_coverage_score, 1),
                         "weight": TEMPORAL_WEIGHT,
+                        "meaning": "span between first and last reported positions; not continuous AIS coverage",
                     },
                 },
                 "data_quality_note": quality_note,
+                "interpolated_segments_checked": interpolated_segments,
                 "explanation": explanation,
             }
         )
@@ -352,7 +438,7 @@ def match_vessel_candidates(
     provenance = result.setdefault("provenance", {})
     provenance["ais_data"] = [deepcopy(ais_source)] if ais_source else []
     provenance["ais_matching"] = {
-        "method": "static origin-zone proximity plus AIS time coverage",
+        "method": "origin-zone proximity plus short-gap AIS track interpolation and report-span score",
         "release_window": {"start": _utc_text(start), "end": _utc_text(end)},
         "search_radius_km": search_radius_km,
         "score_weights": {
@@ -362,9 +448,15 @@ def match_vessel_candidates(
         "ais_observations_received": total_observations,
         "ais_observations_in_release_window": in_window_count,
         "max_candidates": max_candidates,
+        "interpolation": {
+            "max_gap_seconds": MAX_INTERPOLATION_GAP_SECONDS,
+            "max_plausible_speed_knots": MAX_PLAUSIBLE_SPEED_KNOTS,
+            "intermediate_samples_per_gap": INTERPOLATION_STEPS - 1,
+            "long_track_gaps_seconds": MAX_TRACK_GAP_SECONDS,
+        },
         "limitation": (
             "The current case format stores one origin-zone geometry, not a time-varying drift corridor. "
-            "This is a coarse screening aid, not a trajectory match or source attribution."
+            "Short AIS gaps are approximated linearly; longer gaps are not interpolated. This is a screening aid, not a trajectory match or source attribution."
         ),
     }
     return result

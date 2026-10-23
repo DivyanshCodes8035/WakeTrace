@@ -74,17 +74,24 @@
         <div id="real-drift-output" class="simulation-ground-truth" hidden>
           <strong id="real-drift-title"></strong><p id="real-drift-text"></p>
           <p id="real-drift-sources" class="muted"></p>
-          <form id="real-ais-form" class="scene-search-form" hidden>
-            <h3>Optional: compare authorized AIS tracks</h3>
-            <p class="muted">Choose a CSV export from a real AIS provider. WakeTrace does not invent missing positions or assign blame.</p>
+          <div id="real-ais-auto" class="scene-search-form" hidden>
+            <h3>Automatic AIS presence search</h3>
+            <p class="muted">WakeTrace searches Global Fishing Watch for reported vessel presence in this possible origin area and time window. Results are daily grid-cell leads, not exact routes.</p>
+            <button id="search-ais-presence" class="secondary-button" type="button">Search AIS presence automatically</button>
+          </div>
+          <p id="real-ais-status" class="upload-status" role="status" aria-live="polite" hidden></p>
+          <div id="real-ais-candidates" class="simulation-vessel-list"></div>
+          <details id="manual-ais-review" class="manual-ais-review" hidden>
+            <summary>Have a detailed AIS track export? Add it for a closer review</summary>
+            <form id="real-ais-form" class="scene-search-form">
+            <p class="muted">CSV data is optional. WakeTrace does not invent missing positions or assign blame.</p>
             <label>AIS provider<input name="provider" type="text" placeholder="Provider name" required></label>
             <label>Dataset or export name<input name="dataset" type="text" placeholder="Dataset name" required></label>
             <label>AIS positions CSV<input name="ais_file" type="file" accept=".csv,text/csv" required></label>
             <p class="muted">Required columns: vessel_id, timestamp, longitude, latitude. Optional: position_accuracy_m. Do not use practice-mode tracks.</p>
             <button id="match-ais-button" class="secondary-button" type="submit">Review AIS matches</button>
-          </form>
-          <p id="real-ais-status" class="upload-status" role="status" aria-live="polite" hidden></p>
-          <div id="real-ais-candidates" class="simulation-vessel-list"></div>
+            </form>
+          </details>
         </div>
         <p id="real-drift-status" class="upload-status" role="status" aria-live="polite">Choose a feature above to start the real-data drift estimate.</p>
       </section>
