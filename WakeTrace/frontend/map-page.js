@@ -5,11 +5,12 @@ const colors = {
   origin: { color: "#0f7c86", weight: 3, fillColor: "#55b8ad", fillOpacity: 0.3, dashArray: "7 5" },
   track: { color: "#66d5ca", weight: 3, opacity: 0.95, dashArray: "1 8", lineCap: "round", lineJoin: "round" },
   secondary: { color: "#b5dcce", weight: 2, fillColor: "#83cbb9", fillOpacity: 0.14, dashArray: "3 5" },
+  aiSlick: { color: "#c7a3ff", weight: 3, fillColor: "#9d6bff", fillOpacity: 0.12, dashArray: "6 4", className: "ai-slick-outline" },
 };
 function candidateRouteStyle(index = 0) {
   return { ...colors.track, color: index === 0 ? "#ff827f" : "#f5bd58" };
 }
-const shipSvg = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg>';
+const shipSvg = '<svg viewBox="0 0 32 32" aria-hidden="true"><defs><radialGradient id="hullGrad" cx="40%" cy="30%" r="70%"><stop offset="0%" stop-color="#d0f0ec"/><stop offset="100%" stop-color="#9de8e0"/></radialGradient></defs><path d="M16 3 L22 9 L22 24 L16 29 L10 24 L10 9 Z" fill="url(#hullGrad)"/><rect x="12" y="10" width="8" height="5" rx="1" class="ship-bridge"/><line x1="11" y1="18" x2="21" y2="18" class="ship-deck"/><line x1="12" y1="21" x2="20" y2="21" class="ship-deck"/><line x1="13.5" y1="24" x2="18.5" y2="24" class="ship-deck"/><path d="M6 17 C4.5 20 5 23 7 25 M26 17 C27.5 20 27 23 25 25" class="ship-wake"/></svg>';
 const historicalIncident = { latitude: -20.4382, longitude: 57.7447 };
 
 const hasMapLibrary = Boolean(window.L);
@@ -58,7 +59,10 @@ function fitToCase() {
 }
 
 function apiRoot() {
-  return "http://" + (window.location.hostname || "localhost") + ":8002";
+  const configuredPort = new URLSearchParams(window.location.search).get("apiPort");
+  const port = configuredPort && /^\d{1,5}$/.test(configuredPort) && Number(configuredPort) <= 65535
+    ? configuredPort : "8002";
+  return "http://" + (window.location.hostname || "localhost") + ":" + port;
 }
 
 function candidatePositionAt(positions, timestamp) {
@@ -606,6 +610,12 @@ async function showScene(scene, form, status, button) {
       addGeometry(candidate.geometry, index === 0 ? colors.slick : colors.secondary,
         "Dark SAR feature " + (index + 1) + " · review required; not confirmed oil");
     });
+    const aiScreen = result.detection.ai_screen || { status: "unavailable", message: "AI model results were not returned." };
+    const aiCandidates = aiScreen.status === "complete" ? (aiScreen.candidates || []) : [];
+    aiCandidates.forEach((candidate, index) => {
+      addGeometry(candidate.geometry, colors.aiSlick,
+        "AI slick-like texture " + (index + 1) + " · experimental model score, not an oil probability");
+    });
     const [west, south, east, north] = bboxFromForm(form);
     const incidentInScene = historicalIncident.longitude >= west && historicalIncident.longitude <= east
       && historicalIncident.latitude >= south && historicalIncident.latitude <= north;
@@ -640,6 +650,7 @@ async function showScene(scene, form, status, button) {
         confidence: null,
         geometry: result.detection.geometry,
         candidates: result.detection.candidates,
+        ai_screen: result.detection.ai_screen,
         note: result.detection.note,
         provenance: result.detection.provenance,
       },
@@ -650,6 +661,7 @@ async function showScene(scene, form, status, button) {
     $("save-real-case").hidden = false;
     $("save-case-status").hidden = true;
     $("legend-slick").hidden = candidates.length === 0;
+    $("legend-ai").hidden = aiCandidates.length === 0;
     $("legend-dark-features").hidden = candidates.length < 2;
     $("legend-origin").hidden = true;
     $("legend-track").hidden = true;
@@ -657,13 +669,13 @@ async function showScene(scene, form, status, button) {
     $("legend-scene").lastChild.textContent = "Copernicus Sentinel-1 scene";
     $("legend-sim-source").hidden = true;
     $("legend-sim-slick").hidden = true;
-    $("map-overlay-chip").textContent = "DRIFT ORIGIN ESTIMATE";
+    $("map-overlay-chip").textContent = "RADAR + AI SCREEN";
     $("map-footnote").textContent = result.detection.note + (incidentInScene
       ? " The red marker shows the approximate reported Wakashio incident position from NOAA; it is reference context, not a detected oil boundary."
       : "") + " The scene and outlines are temporary and are not saved to the case.";
-    $("map-description").textContent = "Observed dark radar features · analyst review required";
+    $("map-description").textContent = "Radar + AI candidate areas · analyst review required";
     map.fitBounds(L.latLngBounds(result.preview.preview_bounds), { padding: [28, 28], maxZoom: 12 });
-    $("real-detection-results").hidden = candidates.length === 0;
+    $("real-detection-results").hidden = candidates.length === 0 && aiCandidates.length === 0 && aiScreen.status === "complete";
     $("real-candidate-list").replaceChildren();
     candidates.forEach((candidate, index) => {
       const card = document.createElement("article");
@@ -676,15 +688,42 @@ async function showScene(scene, form, status, button) {
       card.append(title, detail, action);
       $("real-candidate-list").append(card);
     });
+    $("ai-screen-results").hidden = false;
+    $("ai-candidate-list").replaceChildren();
+    if (aiScreen.status === "complete") {
+      $("ai-screen-summary").textContent = aiCandidates.length
+        ? aiCandidates.length + " AI-highlighted area(s) · trained on Sentinel-1 examples from the Gulf of Mexico. Purple outlines show where the model found similar radar textures."
+        : "The AI model found no areas above its screening threshold in this image.";
+      aiCandidates.forEach((candidate, index) => {
+        const card = document.createElement("article");
+        card.className = "candidate-card ai-candidate-card";
+        const title = textNode("strong", "AI area " + (index + 1), "scene-title");
+        const score = Number(candidate.model_score);
+        const detail = textNode("p", candidate.pixel_count + " pixels · model score " + (Number.isFinite(score) ? score.toFixed(2) : "—") + " (not a probability). " + candidate.explanation);
+        const action = textNode("button", "Estimate possible origin", "scene-select-button");
+        action.type = "button";
+        action.addEventListener("click", () => estimateRealDrift(candidate, action));
+        card.append(title, detail, action);
+        $("ai-candidate-list").append(card);
+      });
+      $("ai-screen-limitations").textContent = "Experimental model · trained with 173 labeled Sentinel-1 tiles from Cantarell, Gulf of Mexico (2020); held-out test IoU 0.618. It has not been validated for Mauritius. Dark wind areas, rain, waves, and ship wakes can resemble oil. Human review is required.";
+    } else {
+      $("ai-screen-summary").textContent = "AI screening is unavailable: " + (aiScreen.message || "install the optional model runtime and checkpoint");
+      $("ai-screen-limitations").textContent = "The regular radar dark-feature screen above still works.";
+    }
     $("simulation-panel").hidden = false;
     $("simulation-panel").open = false;
     $("simulation-status").textContent = "Expand Practice mode only if you want to try a clearly fictional exercise.";
-    if (candidates.length) {
-      status.textContent = candidates.length + " possible dark radar feature(s) found. Select a feature below to estimate its possible origin; the features are not confirmed oil.";
+    if (candidates.length || aiCandidates.length) {
+      status.textContent = candidates.length + " radar-screen area(s) and " + aiCandidates.length + " AI-highlighted area(s). Choose any area below to estimate its possible origin; none is confirmed oil.";
       $("map-message").hidden = true;
     } else {
-      status.textContent = "The image loaded, but no dark-feature candidates met the screening settings. This does not prove there is no oil.";
-      $("map-message").textContent = "No dark-feature candidates met the screen settings.";
+      status.textContent = aiScreen.status === "complete"
+        ? "The image loaded, but neither screen highlighted an area above its settings. This does not prove there is no oil."
+        : "The radar screen found no candidate, and AI screening is unavailable. This does not prove there is no oil.";
+      $("map-message").textContent = aiScreen.status === "complete"
+        ? "Neither screen highlighted a possible area."
+        : "No radar candidate found; AI screening unavailable.";
       $("map-message").hidden = false;
     }
   } catch (error) {
@@ -742,6 +781,7 @@ async function showCatalogQuicklook(scene, form, status, processingError) {
   $("save-real-case").hidden = true;
   $("simulation-panel").hidden = true;
   $("legend-slick").hidden = true;
+  $("legend-ai").hidden = true;
   $("legend-dark-features").hidden = true;
   $("legend-origin").hidden = true;
   $("legend-track").hidden = true;
@@ -759,7 +799,7 @@ async function estimateRealDrift(candidate, button) {
   if (!selectedScene || !selectedSceneBounds) return;
   const status = $("real-drift-status");
   button.disabled = true;
-  document.querySelectorAll("#real-candidate-list button").forEach((item) => { item.disabled = true; });
+  document.querySelectorAll("#real-detection-results .scene-select-button").forEach((item) => { item.disabled = true; });
   status.textContent = "Getting public historical wind and current data, then backtracking an OpenDrift ensemble… This may take a few minutes.";
   $("real-drift-output").hidden = true;
   try {
@@ -784,7 +824,7 @@ async function estimateRealDrift(candidate, button) {
     const start = WakeTraceCase.formatUtc(result.drift.release_window.start);
     const end = WakeTraceCase.formatUtc(result.drift.release_window.end);
     $("real-drift-title").textContent = "Possible origin area · " + result.drift.ensemble_size + " particles";
-    $("real-drift-text").textContent = "OpenDrift backtracked this selected dark feature to an uncertain possible origin area. Search window: " + start + " to " + end + ". " + result.drift.uncertainty_note;
+    $("real-drift-text").textContent = "OpenDrift backtracked this selected radar feature to an uncertain possible origin area. Search window: " + start + " to " + end + ". " + result.drift.uncertainty_note;
     $("real-drift-sources").textContent = "Real data used: " + result.drift.provenance.input_sources.map((source) => source.product + " (" + source.dataset + ")").join(" and ") + ". The release window is the model search period, not a measured spill time.";
     $("real-drift-output").hidden = false;
     window.currentRealDrift = result.drift;
@@ -800,7 +840,7 @@ async function estimateRealDrift(candidate, button) {
   } catch (error) {
     status.textContent = error.message;
   } finally {
-    document.querySelectorAll("#real-candidate-list button").forEach((item) => { item.disabled = false; });
+    document.querySelectorAll("#real-detection-results .scene-select-button").forEach((item) => { item.disabled = false; });
   }
 }
 
@@ -1019,6 +1059,7 @@ $("run-simulation").addEventListener("click", async () => {
     $("legend-reference").hidden = true;
     $("legend-sim-source").hidden = true;
     $("legend-slick").hidden = candidates.length === 0;
+    $("legend-ai").hidden = true;
     $("legend-dark-features").hidden = candidates.length < 2;
     $("legend-origin").hidden = true;
     $("legend-track").hidden = true;

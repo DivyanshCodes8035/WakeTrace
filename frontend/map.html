@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b2236">
+    <title>WakeTrace | Case map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="styles.css?v=14">
+    <link rel="stylesheet" href="guided-demo.css?v=2">
+  </head>
+  <body>
+    <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
+    <a class="skip-link" href="#main">Skip to case map</a>
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="WakeTrace case overview"><span class="brand-mark" aria-hidden="true">≋</span><span>WakeTrace</span></a>
+      <nav class="top-nav" aria-label="Main navigation">
+        <a data-case-link href="index.html">Overview</a>
+        <a class="nav-active" aria-current="page" data-case-link href="map.html">Map</a>
+        <a data-case-link href="evidence.html">Evidence</a>
+      </nav>
+      <div class="header-context"><span class="status-dot" aria-hidden="true"></span> Investigation workspace</div>
+    </header>
+    <main class="page-shell map-page-shell" id="main">
+      <section class="case-heading map-page-heading" aria-labelledby="case-title">
+        <div><div class="eyebrow">SPATIAL REVIEW <span id="case-badge" class="badge">Loading</span></div><h1 id="case-title">Loading case…</h1><p id="case-subtitle" class="muted">Preparing mapped evidence</p></div>
+        <a class="text-link" data-case-link href="evidence.html">Review timing &amp; sources <span aria-hidden="true">→</span></a>
+      </section>
+      <div id="case-notice" class="case-notice map-notice" role="note" hidden></div>
+      <p class="leads-banner" role="note"><span class="leads-icon" aria-hidden="true">!</span><span><strong>Possible leads only.</strong> A modeled origin area is uncertain and does not establish vessel responsibility.</span></p>
+      <aside id="historical-reference" class="historical-reference" role="note" hidden>
+        <div><span class="metric-label">DOCUMENTED HISTORICAL INCIDENT · EXTERNAL REFERENCE</span>
+          <strong>MV Wakashio · Pointe d’Esny, Mauritius</strong>
+          <p>Public incident records identify the vessel and place its approximate reported position near this scene. The map marker is an incident reference point, not a satellite-detected oil boundary or an algorithmic vessel match.</p>
+          <a href="https://incidentnews.noaa.gov/incident/10139" target="_blank" rel="noreferrer">NOAA incident record</a>
+          <a href="https://environment.govmu.org/Pages/wakashio.aspx" target="_blank" rel="noreferrer">Mauritius Environment Ministry</a>
+        </div>
+        <span class="reference-coordinate">20.4382° S<br>57.7447° E</span>
+      </aside>
+      <section class="scene-context panel" aria-label="Satellite scene details">
+        <div class="scene-emblem" aria-hidden="true"><span>◉</span><i></i></div>
+        <div class="scene-details"><span id="scene-kind" class="metric-label">SATELLITE SCENE</span><strong id="scene-source">Source not recorded</strong><span id="scene-acquired" class="muted">Acquisition time unavailable</span></div>
+        <div id="scene-preview-status" class="scene-preview-status">No case imagery attached</div>
+        <img id="scene-preview" class="scene-preview" alt="Satellite scene preview attached to this case" hidden>
+      </section>
+      <section class="panel scene-upload-panel" aria-labelledby="upload-title">
+        <div class="panel-heading"><div><h2 id="upload-title">Find real Sentinel-1 imagery</h2><p class="muted">Move the map to the real incident area, then let WakeTrace find the newest available scene.</p></div></div>
+        <form id="scene-search-form" class="scene-search-form">
+          <label>West longitude<input name="west" type="number" min="-180" max="180" step="any" placeholder="western edge" required></label>
+          <label>South latitude<input name="south" type="number" min="-90" max="90" step="any" placeholder="southern edge" required></label>
+          <label>East longitude<input name="east" type="number" min="-180" max="180" step="any" placeholder="eastern edge" required></label>
+          <label>North latitude<input name="north" type="number" min="-90" max="90" step="any" placeholder="northern edge" required></label>
+          <label>From date<input name="start_date" type="date" required></label>
+          <label>To date<input name="end_date" type="date" required></label>
+          <label>Radar polarization<select name="polarization"><option>VV</option><option>VH</option></select></label>
+          <button id="use-map-bounds" class="secondary-button" type="button">Use current map area</button>
+          <button id="auto-find-scene" class="secondary-button" type="button">Find newest scene automatically</button>
+          <button class="primary-button" type="submit">Search Copernicus</button>
+          <p id="upload-status" class="upload-status" role="status" aria-live="polite">First move and zoom the map to the real area. Automatic search uses that map area and the latest 32 days; it finds imagery, not spills.</p>
+        </form>
+        <div class="coordinate-save-row">
+          <p id="coordinate-save-status" class="coordinate-save-status" role="status" aria-live="polite">Your search coordinates are saved automatically on this device.</p>
+          <button id="clear-saved-coordinates" class="text-button" type="button">Clear saved coordinates</button>
+        </div>
+        <div id="scene-results" class="scene-results" aria-live="polite"></div>
+        <div class="offline-practice-callout">
+          <div><strong>One-click synthetic demo</strong><p class="muted">Uses a generated radar-style image and fixed example location. No coordinates or account needed; this is not satellite data.</p></div>
+          <button id="start-offline-practice" class="secondary-button" type="button">Run simulated case</button>
+        </div>
+      </section>
+      <section id="real-detection-results" class="panel real-detection-panel" aria-labelledby="real-detection-title" hidden>
+        <div class="panel-heading">
+          <div><div class="eyebrow">REAL-DATA REVIEW</div><h2 id="real-detection-title">Review possible slick areas</h2>
+            <p class="muted">Compare the radar screen with the experimental AI screen below. Both show possible slick-like areas; neither confirms oil.</p></div>
+        </div>
+        <div id="real-candidate-list" class="simulation-vessel-list"></div>
+        <section id="ai-screen-results" class="ai-screen-results" aria-live="polite" hidden>
+          <h3>Experimental AI screen</h3>
+          <p id="ai-screen-summary" class="muted"></p>
+          <div id="ai-candidate-list" class="simulation-vessel-list"></div>
+          <p id="ai-screen-limitations" class="muted ai-screen-limitations"></p>
+        </section>
+        <button id="save-real-case" class="secondary-button" type="button" hidden>Save this reviewed case</button>
+        <p id="save-case-status" class="upload-status" role="status" aria-live="polite" hidden></p>
+        <div id="real-drift-output" class="simulation-ground-truth" hidden>
+          <strong id="real-drift-title"></strong><p id="real-drift-text"></p>
+          <p id="real-drift-sources" class="muted"></p>
+          <div id="real-ais-auto" class="scene-search-form" hidden>
+            <h3>Automatic AIS presence search</h3>
+            <p class="muted">WakeTrace searches Global Fishing Watch for reported vessel presence in this possible origin area and time window. Results are daily grid-cell leads, not exact routes.</p>
+            <button id="search-ais-presence" class="secondary-button" type="button">Search AIS presence automatically</button>
+          </div>
+          <p id="real-ais-status" class="upload-status" role="status" aria-live="polite" hidden></p>
+          <div id="real-ais-candidates" class="simulation-vessel-list"></div>
+          <details id="manual-ais-review" class="manual-ais-review" hidden>
+            <summary>Have a detailed AIS track export? Add it for a closer review</summary>
+            <form id="real-ais-form" class="scene-search-form">
+            <p class="muted">CSV data is optional. WakeTrace does not invent missing positions or assign blame.</p>
+            <label>AIS provider<input name="provider" type="text" placeholder="Provider name" required></label>
+            <label>Dataset or export name<input name="dataset" type="text" placeholder="Dataset name" required></label>
+            <label>AIS positions CSV<input name="ais_file" type="file" accept=".csv,text/csv" required></label>
+            <p class="muted">Required columns: vessel_id, timestamp, longitude, latitude. Optional: position_accuracy_m. Do not use practice-mode tracks.</p>
+            <button id="match-ais-button" class="secondary-button" type="submit">Review AIS matches</button>
+            </form>
+          </details>
+        </div>
+        <p id="real-drift-status" class="upload-status" role="status" aria-live="polite">Choose a feature above to start the real-data drift estimate.</p>
+      </section>
+      <details id="simulation-panel" class="panel simulation-panel" hidden>
+        <summary class="panel-heading">
+          <div><div class="eyebrow">PRACTICE MODE · SYNTHETIC</div><h2 id="simulation-title">Try a simulated spill on this real radar scene</h2>
+            <p class="muted">For a practice exercise only: click a point in the scene to add an artificial patch and fictional vessel routes.</p></div>
+        </summary>
+        <div class="panel-heading">
+          <div><div class="eyebrow">PRACTICE MODE · SYNTHETIC</div><h2 id="simulation-title">Try a simulated spill on this real radar scene</h2>
+            <p class="muted">Click an offshore point on the map to choose a fictional release location. WakeTrace will add a simple dark patch to a copy of the image and screen it.</p></div>
+        </div>
+        <div class="simulation-actions"><button id="run-simulation" class="primary-button" type="button" disabled>Choose a point on the map first</button>
+          <span id="simulation-status" class="upload-status" role="status" aria-live="polite">The simulated patch, wind/current conditions, and vessel tracks are invented for this exercise.</span></div>
+      </details>
+      <section id="map-panel" class="map-panel panel map-page-panel" aria-labelledby="map-title">
+        <div class="panel-heading map-heading">
+          <div><h2 id="map-title">Area of interest</h2><p id="map-description" class="muted">Observed slick boundary and possible drift origin</p></div>
+          <ul class="map-legend" aria-label="Map legend"><li id="legend-slick"><i class="legend-swatch slick"></i>Possible dark feature</li><li id="legend-ai" hidden><i class="legend-swatch ai-slick"></i>AI slick-like texture</li><li id="legend-dark-features" hidden><i class="legend-swatch secondary"></i>Other dark features</li><li id="legend-origin"><i class="legend-swatch origin"></i>Possible origin</li><li id="legend-particles" hidden><i class="legend-swatch particles"></i>Modeled oil particles</li><li id="legend-track" hidden><i class="legend-swatch track"></i>Candidate route <span class="legend-vessel" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg></span>Ship / AIS position</li><li id="legend-scene" hidden><i class="legend-swatch scene-raster"></i>Copernicus Sentinel-1 scene</li><li id="legend-reference" hidden><i class="legend-swatch reference-swatch"></i>Reported incident location</li><li id="legend-sim-source" hidden><i class="legend-swatch simulated-source-swatch"></i>Fictional release point</li><li id="legend-sim-slick" hidden><i class="legend-swatch simulated-slick-swatch"></i>Planted slick center</li></ul>
+        </div>
+        <details class="plain-help map-help">
+          <summary>What do the map symbols and terms mean?</summary>
+          <div class="help-grid">
+            <p><i class="legend-swatch slick"></i><strong>Amber outline:</strong> a possible dark radar feature selected for review. It is not proof of oil.</p>
+            <p><i class="legend-swatch origin"></i><strong>Teal dashed area:</strong> a possible origin area estimated by the drift model. Its size shows uncertainty.</p>
+            <p><i class="legend-vessel" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 24.5 10v13.5L16 29.5 7.5 23.5V10L16 2.5Z"/><path d="M12 10.5h8v5.5h-8z" class="ship-bridge"/><path d="M10.5 18h11M11.5 21.5h9M13 25h6" class="ship-deck"/><path d="M5.5 16.5c-1.2 2.7-.8 5.5.8 7.4M26.5 16.5c1.2 2.7.8 5.5-.8 7.4" class="ship-wake"/></svg></i><strong>Ship icon:</strong> an AIS-reported vessel position. The dashed route connects observations; the larger moving ship shows the vessel at the current playback time.</p>
+            <p><i class="legend-swatch simulated-source-swatch"></i><strong>Pink point:</strong> in practice mode, the invented release point used to check whether the exercise works.</p>
+            <p><i class="legend-swatch simulated-slick-swatch"></i><strong>Teal center:</strong> the planted center of the practice patch, not a measured oil location.</p>
+            <p><strong>Coordinates:</strong> choose an area to search. GeoJSON positions are written longitude first, then latitude; coordinates do not tell WakeTrace where a spill happened.</p>
+            <p><strong>Radar image:</strong> grayscale radar brightness, not a normal camera photo. Some dark areas can look like oil but have other causes.</p>
+            <p><strong>AIS:</strong> ship-position messages. Coverage can be incomplete, and some results are approximate daily areas.</p>
+            <p><strong>Playback:</strong> teal particles start moving when modeled paths load. Pause or scrub the timeline; candidate ship markers move only between timestamped AIS reports, and long gaps are left blank.</p>
+          </div>
+        </details>
+        <div class="map-stage map-page-stage">
+          <div id="map" role="region" aria-label="Interactive map showing case geometries"></div>
+          <div id="map-overlay-chip" class="map-overlay-chip"><span class="overlay-icon" aria-hidden="true">↶</span> DRIFT ORIGIN ESTIMATE</div>
+          <button id="fit-button" class="map-button" type="button">Fit to case</button>
+          <div id="map-message" class="map-message" role="status" aria-live="polite">Loading map…</div>
+        </div>
+        <p id="map-footnote" class="map-footnote">Choose a real scene to view its processed Sentinel-1 radar image. The one-click demo creates its own practice scene and sets the example location automatically.</p>
+        <div id="trajectory-controls" class="trajectory-controls" hidden>
+          <button id="trajectory-play" class="secondary-button" type="button">Play drift</button>
+          <label class="trajectory-scrubber" for="trajectory-range"><span>Possible release</span><input id="trajectory-range" type="range" min="0" max="0" value="0" step="1"><span>Slick observation</span></label>
+          <time id="trajectory-time" class="trajectory-time"></time>
+          <p id="trajectory-note" class="trajectory-note">Modeled particle playback. Track animation appears only for timestamped AIS observations.</p>
+        </div>
+      </section>
+      <section id="simulation-step" class="panel simulation-step" aria-live="polite" hidden>
+        <div class="simulation-step-copy">
+          <div class="eyebrow">STEP 1 OF 2 · RADAR SCREENING</div>
+          <h2 id="simulation-step-title">Full-scene radar overview</h2>
+          <p id="simulation-step-copy" class="muted">The generated Sentinel-1-style radar view appears first, then zooms to the planted practice patch. It is not satellite data.</p>
+        </div>
+        <div class="simulation-step-action">
+          <span id="simulation-step-count" class="score-pill"></span>
+          <button id="show-vessel-matches" class="primary-button" type="button" disabled>Zooming to patch…</button>
+        </div>
+      </section>
+      <section id="simulation-results" class="panel simulation-results" aria-live="polite" hidden>
+        <div class="eyebrow">SIMULATION RESULT · NOT REAL INCIDENT EVIDENCE</div>
+        <h2>What the exercise found</h2>
+        <p id="simulation-summary" class="muted"></p>
+        <div class="simulation-ground-truth"><strong>Ground-truth reveal:</strong> <span id="simulation-truth"></span></div>
+        <div id="simulation-vessel-list" class="simulation-vessel-list"></div>
+      </section>
+      <footer class="page-footer">No geometry is invented when case data is missing. <a data-case-link href="evidence.html">Review evidence and limitations</a>.</footer>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="case-data.js?v=2"></script>
+    <script src="map-page.js?v=39"></script>
+    <script src="guided-demo.js?v=3"></script>
+  </body>
+</html>

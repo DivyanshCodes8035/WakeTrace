@@ -1,0 +1,5 @@
+# Optional local runtime for the experimental trained SAR model.
+# Install this into the project .venv; CPU-only wheels are sufficient.
+torch>=2.8
+numpy>=1.26
+Pillow>=10
