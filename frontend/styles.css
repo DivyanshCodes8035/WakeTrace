@@ -788,11 +788,7 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 650; }
   border: 1px solid rgb(45 212 191 / 20%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%), 0 6px 14px rgb(0 0 0 / 25%);
 }
-<<<<<<< HEAD
 .evidence-icon, .satellite-icon {
-=======
-.evidence-icon {
->>>>>>> 8a836183111d7c65ef38378c8e347370d64b4fbe
   background: linear-gradient(145deg, rgb(245 158 11 / 15%), rgb(217 119 6 / 10%));
   color: #fbbf24;
   border-color: rgb(245 158 11 / 25%);
@@ -1336,7 +1332,6 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 650; }
 .ai-screen-results .ai-screen-limitations { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid rgb(157 107 255 / 20%); }
 .ai-candidate-card { border-color: rgb(157 107 255 / 24%); }
 .ai-slick-outline { filter: drop-shadow(0 0 3px rgb(157 107 255 / 75%)); }
-<<<<<<< HEAD
 
 /* ─── Overview cinematic hero ────────────────────────────── */
 .overview-page .ambient-globe { display: none; }
@@ -1427,6 +1422,7 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 650; }
 
 .overview-hero-cta {
   display: inline-flex;
+  align-self: center;
   align-items: center;
   justify-content: center;
   gap: 12px;
@@ -1499,5 +1495,3 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 650; }
   .overview-hero-cta { animation: none; }
   .overview-hero-scroll::after { animation: none; }
 }
-=======
->>>>>>> 8a836183111d7c65ef38378c8e347370d64b4fbe

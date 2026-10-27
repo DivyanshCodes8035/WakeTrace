@@ -34,11 +34,7 @@
         const url = new URL(link.href, window.location.href);
         if (requestedCase) url.searchParams.set("case", caseData.case_id || requestedCase);
         if (params.get("demo") === "1") url.searchParams.set("demo", "1");
-<<<<<<< HEAD
         link.href = url.pathname.split("/").pop() + url.search + url.hash;
-=======
-        link.href = url.pathname.split("/").pop() + url.search;
->>>>>>> 8a836183111d7c65ef38378c8e347370d64b4fbe
       });
     },
     markSynthetic(caseData) {
