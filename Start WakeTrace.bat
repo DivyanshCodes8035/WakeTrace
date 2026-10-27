@@ -18,5 +18,5 @@ start "WakeTrace API - port 8002" /D "%PROJECT_ROOT%backend" cmd /k "python -m u
 start "WakeTrace Website - port 8080" /D "%PROJECT_ROOT%frontend" cmd /k "python -m http.server 8080"
 
 timeout /t 2 /nobreak >nul
-start "" "http://locgitalhost:8080/"
+start "" "http://localhost:8080/"
 endlocal
