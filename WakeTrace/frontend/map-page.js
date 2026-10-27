@@ -1,4 +1,9 @@
 const $ = (id) => document.getElementById(id);
+document.querySelectorAll(".top-nav a").forEach((link) => {
+  const label = link.textContent.trim().toLowerCase();
+  const target = link.getAttribute("href") || "";
+  if (label === "evidence" || /(?:^|\/)evidence\.html(?:[?#]|$)/i.test(target)) link.remove();
+});
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const colors = {
   slick: { color: "#ffd17d", weight: 3, fillColor: "#f3a642", fillOpacity: 0.16, className: "slick-candidate-outline", smoothFactor: 2.5, lineJoin: "round", lineCap: "round" },
@@ -253,41 +258,6 @@ function revealVesselResults(result) {
     vesselList.append(card);
   });
   $("simulation-results").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
-}
-
-function savePracticeResultForEvidence(result) {
-  const sceneTime = result.scene?.datetime || result.detection?.acquired_at || new Date().toISOString();
-  const detection = { ...result.detection };
-  delete detection.preview_url;
-  const caseData = {
-    practice_result: true,
-    synthetic: true,
-    case_id: "practice-session",
-    title: "One-click simulated spill exercise",
-    synthetic_notice: result.simulation?.note || "Synthetic practice only. Results are generated for demonstration and are not real incident evidence.",
-    detection: {
-      ...detection,
-      acquired_at: sceneTime,
-      provenance: {
-        ...(detection.provenance || {}),
-        input_sources: [{
-          provider: result.scene?.source || "Synthetic practice generator",
-          dataset: result.scene?.id || "Generated radar-style scene",
-          description: result.simulation?.background_label === "Synthetic radar-style"
-            ? "Generated practice background; not satellite imagery."
-            : result.simulation?.background_label || "Generated practice background; not satellite imagery.",
-        }],
-      },
-    },
-    drift: result.drift,
-    vessel_candidates: result.vessel_candidates || [],
-    simulation: result.simulation,
-  };
-  try {
-    sessionStorage.setItem("waketrace.practice-result.v1", JSON.stringify(caseData));
-  } catch (error) {
-    console.warn("Could not save the practice result for Evidence", error);
-  }
 }
 
 function bboxFromForm(form) {
@@ -983,7 +953,7 @@ $("save-real-case").addEventListener("click", async () => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "Could not save this case.");
-    status.textContent = "Saved. Use Overview or Evidence to reopen this case.";
+    status.textContent = "Saved in the WakeTrace project.";
     const url = new URL(window.location.href);
     url.searchParams.set("case", result.case_id);
     window.history.replaceState({}, "", url);
@@ -1026,8 +996,6 @@ $("run-simulation").addEventListener("click", async () => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "The simulated exercise could not run.");
-    savePracticeResultForEvidence(result);
-
     if (sceneOverlay) map.removeLayer(sceneOverlay);
     sceneOverlay = L.imageOverlay(result.preview.preview_url, result.preview.preview_bounds, { opacity: 0.94 }).addTo(map);
     layers.clearLayers();

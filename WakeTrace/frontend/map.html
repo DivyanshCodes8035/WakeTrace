@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=14">
+    <link rel="stylesheet" href="styles.css?v=15">
     <link rel="stylesheet" href="guided-demo.css?v=2">
   </head>
   <body>
@@ -17,14 +17,12 @@
       <nav class="top-nav" aria-label="Main navigation">
         <a data-case-link href="index.html">Overview</a>
         <a class="nav-active" aria-current="page" data-case-link href="map.html">Map</a>
-        <a data-case-link href="evidence.html">Evidence</a>
       </nav>
       <div class="header-context"><span class="status-dot" aria-hidden="true"></span> Investigation workspace</div>
     </header>
     <main class="page-shell map-page-shell" id="main">
       <section class="case-heading map-page-heading" aria-labelledby="case-title">
         <div><div class="eyebrow">SPATIAL REVIEW <span id="case-badge" class="badge">Loading</span></div><h1 id="case-title">Loading case…</h1><p id="case-subtitle" class="muted">Preparing mapped evidence</p></div>
-        <a class="text-link" data-case-link href="evidence.html">Review timing &amp; sources <span aria-hidden="true">→</span></a>
       </section>
       <div id="case-notice" class="case-notice map-notice" role="note" hidden></div>
       <p class="leads-banner" role="note"><span class="leads-icon" aria-hidden="true">!</span><span><strong>Possible leads only.</strong> A modeled origin area is uncertain and does not establish vessel responsibility.</span></p>
@@ -169,11 +167,11 @@
         <div class="simulation-ground-truth"><strong>Ground-truth reveal:</strong> <span id="simulation-truth"></span></div>
         <div id="simulation-vessel-list" class="simulation-vessel-list"></div>
       </section>
-      <footer class="page-footer">No geometry is invented when case data is missing. <a data-case-link href="evidence.html">Review evidence and limitations</a>.</footer>
+      <footer class="page-footer">No geometry is invented when case data is missing. Review the source and uncertainty notes shown with each result.</footer>
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="case-data.js?v=2"></script>
-    <script src="map-page.js?v=39"></script>
+    <script src="case-data.js?v=3"></script>
+    <script src="map-page.js?v=41"></script>
     <script src="guided-demo.js?v=3"></script>
   </body>
 </html>

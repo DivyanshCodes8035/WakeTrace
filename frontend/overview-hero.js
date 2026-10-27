@@ -22,9 +22,18 @@
   }));
 
   const ships = [
-    { kind: "tanker", x: 0.2, y: 0.34, heading: 0.18, speed: 0.022, scale: 1.7, wake: [] },
-    { kind: "cargo", x: 0.76, y: 0.56, heading: 3.4, speed: 0.028, scale: 1.25, wake: [] },
-    { kind: "workboat", x: 0.4, y: 0.7, heading: -0.5, speed: 0.034, scale: 0.9, wake: [] },
+    {
+      kind: "tanker", route: [[-0.16, 0.3], [0.22, 0.25], [0.68, 0.15], [1.16, 0.22]],
+      duration: 68, offset: 0.27, scale: 1.35, phase: 0.4, wake: [], wakeTimer: 0,
+    },
+    {
+      kind: "cargo", route: [[1.16, 0.7], [0.78, 0.62], [0.34, 0.84], [-0.16, 0.76]],
+      duration: 84, offset: 0.68, scale: 1.02, phase: 2.1, wake: [], wakeTimer: 0,
+    },
+    {
+      kind: "workboat", route: [[-0.16, 0.91], [0.22, 0.84], [0.68, 0.98], [1.16, 0.86]],
+      duration: 102, offset: 0.43, scale: 0.72, phase: 4.3, wake: [], wakeTimer: 0,
+    },
   ];
 
   const glitter = Array.from({ length: small ? 40 : 90 }, () => ({
@@ -103,90 +112,35 @@
     waterCtx.putImageData(pixels, 0, 0);
   }
 
-  function drawSlick(time) {
-    const cx = width * (0.52 + Math.sin(time * 0.12) * 0.03);
-    const cy = height * (0.48 + Math.cos(time * 0.09) * 0.025);
-    const rx = width * (0.28 + Math.sin(time * 0.18) * 0.025);
-    const ry = height * (0.14 + Math.cos(time * 0.15) * 0.016);
-    const rot = -0.35 + Math.sin(time * 0.07) * 0.08;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(rot);
-    ctx.scale(1, 0.78);
-
-    const film = ctx.createRadialGradient(0, 0, 4, 0, 0, Math.max(rx, 12));
-    film.addColorStop(0, "rgba(6, 4, 2, 0.88)");
-    film.addColorStop(0.42, "rgba(18, 12, 4, 0.78)");
-    film.addColorStop(0.72, "rgba(40, 28, 8, 0.42)");
-    film.addColorStop(1, "rgba(18, 80, 70, 0)");
-    ctx.fillStyle = film;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(rx * 0.28, ry * 0.12, rx * 0.55, ry * 0.62, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (let i = 0; i < 18; i += 1) {
-      const a = (i / 18) * Math.PI * 2 + time * 0.15;
-      const px = Math.cos(a) * rx * (0.72 + Math.sin(time * 0.8 + i) * 0.06);
-      const py = Math.sin(a) * ry * (0.72 + Math.cos(time * 0.7 + i) * 0.06);
-      const hue = (170 + i * 14 + time * 28) % 360;
-      ctx.fillStyle = `hsla(${hue}, 90%, 62%, 0.42)`;
-      ctx.beginPath();
-      ctx.ellipse(px, py, 7 + (i % 4), 3.2, a, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.strokeStyle = "rgba(190, 255, 230, 0.45)";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx * 0.92, ry * 0.92, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function pushWake(ship, x, y) {
-    const max = small ? 42 : 70;
-    ship.wake.push({ x, y, life: 1, heading: ship.heading, scale: ship.scale });
-    if (ship.wake.length > max) ship.wake.shift();
+  function pushWake(ship) {
+    ship.wake.push({ x: ship.x, y: ship.y, age: 0, heading: ship.heading, scale: ship.scale });
+    if (ship.wake.length > 42) ship.wake.shift();
   }
 
   function seedWakes() {
     for (const ship of ships) {
       ship.wake = [];
-      const max = small ? 36 : 56;
-      for (let i = max; i >= 0; i -= 1) {
-        const back = (max - i) * 7;
-        ship.wake.push({
-          x: ship.x * width - Math.cos(ship.heading) * back,
-          y: ship.y * height - Math.sin(ship.heading) * back * 0.72,
-          life: i / max,
-          heading: ship.heading,
-          scale: ship.scale,
-        });
-      }
+      ship.wakeTimer = 0;
     }
   }
 
-  function drawWakes() {
+  function drawWakes(dt) {
     for (const ship of ships) {
-      for (const w of ship.wake) {
-        const spread = (1 - w.life) * 18 * w.scale;
-        ctx.save();
-        ctx.translate(w.x, w.y);
-        ctx.rotate(w.heading);
-        ctx.globalAlpha = w.life * 0.5;
-        ctx.fillStyle = "rgba(236, 254, 255, 0.95)";
+      for (const wake of ship.wake) wake.age += dt;
+      ship.wake = ship.wake.filter((wake) => wake.age < 2.6);
+
+      ctx.save();
+      ctx.fillStyle = "#b9f5ee";
+      for (let i = 0; i < ship.wake.length; i += 1) {
+        const wake = ship.wake[i];
+        const fade = Math.max(0, 1 - wake.age / 2.6);
+        if (fade <= 0.03) continue;
+        ctx.globalAlpha = fade * 0.82;
         ctx.beginPath();
-        ctx.ellipse(-10 * w.scale, spread, 16 * w.scale, 3.2 + spread * 0.35, 0, 0, Math.PI * 2);
-        ctx.ellipse(-10 * w.scale, -spread, 16 * w.scale, 3.2 + spread * 0.35, 0, 0, Math.PI * 2);
+        ctx.arc(wake.x, wake.y, Math.max(0.85, 1.35 * wake.scale), 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
-        w.life -= 0.012;
       }
-      ship.wake = ship.wake.filter((w) => w.life > 0);
+      ctx.restore();
     }
   }
 
@@ -257,25 +211,97 @@
     }
   }
 
-  function drawShips(dt) {
-    for (const ship of ships) {
-      ship.x += Math.cos(ship.heading) * ship.speed * dt;
-      ship.y += Math.sin(ship.heading) * ship.speed * dt * 0.72;
-      if (ship.x > 1.12) ship.x = -0.1;
-      if (ship.x < -0.12) ship.x = 1.1;
-      if (ship.y > 1.12) ship.y = -0.08;
-      if (ship.y < -0.12) ship.y = 1.08;
+  function drawBowLight(kind, scale) {
+    const bow = (kind === "tanker" ? 38 : kind === "cargo" ? 30 : 18) * scale;
+    const length = (kind === "tanker" ? 66 : kind === "cargo" ? 56 : 42) * scale;
+    const spread = (kind === "tanker" ? 13 : kind === "cargo" ? 11 : 8) * scale;
 
-      const px = ship.x * width;
-      const py = ship.y * height;
-      pushWake(ship, px, py);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const beam = ctx.createLinearGradient(bow, 0, bow + length, 0);
+    beam.addColorStop(0, "rgba(255, 236, 32, 0.72)");
+    beam.addColorStop(0.3, "rgba(255, 216, 12, 0.48)");
+    beam.addColorStop(0.72, "rgba(255, 196, 8, 0.14)");
+    beam.addColorStop(1, "rgba(255, 180, 0, 0)");
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(bow - 1 * scale, -2.3 * scale);
+    ctx.lineTo(bow + length, -spread);
+    ctx.quadraticCurveTo(bow + length + 7 * scale, 0, bow + length, spread);
+    ctx.lineTo(bow - 1 * scale, 2.3 * scale);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawBowLamps(kind, scale) {
+    const bow = (kind === "tanker" ? 38 : kind === "cargo" ? 30 : 18) * scale;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.shadowColor = "rgba(255, 190, 0, 1)";
+    ctx.shadowBlur = 16 * scale;
+    ctx.fillStyle = "#fff13d";
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(bow - 1.5 * scale, side * 2.3 * scale, 1.55 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function smoothstep(value) {
+    const n = Math.max(0, Math.min(1, value));
+    return n * n * (3 - 2 * n);
+  }
+
+  function routePose(ship) {
+    const phase = (t / ship.duration + ship.offset) % 1;
+    const [p0, p1, p2, p3] = ship.route;
+    const u = phase;
+    const v = 1 - u;
+    const x = v ** 3 * p0[0] + 3 * v ** 2 * u * p1[0] + 3 * v * u ** 2 * p2[0] + u ** 3 * p3[0];
+    const y = v ** 3 * p0[1] + 3 * v ** 2 * u * p1[1] + 3 * v * u ** 2 * p2[1] + u ** 3 * p3[1];
+    const dx = 3 * v ** 2 * (p1[0] - p0[0]) + 6 * v * u * (p2[0] - p1[0]) + 3 * u ** 2 * (p3[0] - p2[0]);
+    const dy = 3 * v ** 2 * (p1[1] - p0[1]) + 6 * v * u * (p2[1] - p1[1]) + 3 * u ** 2 * (p3[1] - p2[1]);
+    const fade = smoothstep(phase / 0.1) * smoothstep((1 - phase) / 0.1);
+    return { x, y, heading: Math.atan2(dy * height, dx * width), fade };
+  }
+
+  function updateShips(dt) {
+    for (const ship of ships) {
+      const pose = routePose(ship);
+      ship.x = pose.x * width;
+      ship.y = pose.y * height;
+      ship.heading = pose.heading;
+      ship.opacity = pose.fade;
+      if (ship.opacity > 0.82) {
+        ship.wakeTimer += dt;
+        if (ship.wakeTimer >= 0.12) {
+          pushWake(ship);
+          ship.wakeTimer %= 0.12;
+        }
+      } else if (ship.opacity < 0.12) {
+        ship.wakeTimer = 0;
+      }
+    }
+  }
+
+  function drawShips() {
+    for (const ship of ships) {
+      if (ship.opacity <= 0.01) continue;
       ctx.save();
-      ctx.translate(px, py);
-      ctx.rotate(ship.heading);
+      ctx.globalAlpha = ship.opacity;
+      ctx.translate(ship.x, ship.y);
+      ctx.rotate(ship.heading + Math.sin(t * 0.32 + ship.phase) * 0.008);
       ctx.scale(1, 0.78);
-      const bob = Math.sin(t * 2.4 + ship.x * 8) * 1.2;
-      ctx.translate(0, bob);
+      ctx.translate(0, Math.sin(t * 1.1 + ship.phase) * 0.45);
+      ctx.shadowColor = "rgba(2, 10, 18, 0.38)";
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetY = 1.5;
+      drawBowLight(ship.kind, ship.scale);
       drawHull(ship.kind, ship.scale);
+      drawBowLamps(ship.kind, ship.scale);
       ctx.restore();
     }
   }
@@ -330,9 +356,9 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.drawImage(water, 0, 0, width, height);
     drawGlitter(t);
-    drawSlick(t);
-    drawWakes();
-    drawShips(dt);
+    updateShips(dt);
+    drawWakes(dt);
+    drawShips();
     drawScan(t);
     drawVignette();
   }
