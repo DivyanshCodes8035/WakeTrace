@@ -853,6 +853,13 @@ $("plan-coastal-impact").addEventListener("click", async () => {
     const scenarioColors = ["#60d9ce", "#ffc86c", "#bca4ff"];
     result.scenarios.forEach((scenario, index) => {
       const latlngs = scenario.track.map((item) => [item.coordinates[1], item.coordinates[0]]);
+      (scenario.particle_tracks || []).forEach((track) => {
+        const particleLatlngs = track.map((item) => [item.coordinates[1], item.coordinates[0]]);
+        if (particleLatlngs.length > 1) {
+          L.polyline(particleLatlngs, { color: scenarioColors[index % scenarioColors.length], weight: 1, opacity: .14 })
+            .addTo(coastalPlanLayer);
+        }
+      });
       L.polyline(latlngs, { color: scenarioColors[index % scenarioColors.length], weight: index === 1 ? 4 : 2.5, opacity: .9, dashArray: index === 1 ? null : "7 6" })
         .bindPopup(textNode("span", scenario.name + " · what-if path; not an observed slick route"))
         .addTo(coastalPlanLayer);
@@ -872,6 +879,13 @@ $("plan-coastal-impact").addEventListener("click", async () => {
         sourceLink.rel = "noreferrer";
         sourceLink.textContent = "Open source feature";
         popup.append(sourceLink);
+      } else if (props.source === "UNEP-WCMC / IUCN Protected Planet" && props.site_pid) {
+        const sourceLink = document.createElement("a");
+        sourceLink.href = "https://www.protectedplanet.net/" + encodeURIComponent(props.site_pid);
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noreferrer";
+        sourceLink.textContent = "Open protected-area record";
+        popup.append(sourceLink);
       }
       L.geoJSON(feature, {
         style,
@@ -886,26 +900,21 @@ $("plan-coastal-impact").addEventListener("click", async () => {
       : "No returned mapped place fell within 10 km of the scenarios."));
     summary.append(textNode("p", result.model.uncertainty_note));
     summary.append(textNode("p", "Scenario start: " + result.forecast.start + " · data through " + result.forecast.end + " · " + result.forecast.hours_returned + " forecast hours."));
-    const forcing = document.createElement("p");
-    forcing.append(textNode("span", "Forcing: "));
-    const meteoLink = document.createElement("a");
-    meteoLink.href = "https://open-meteo.com/en/docs/marine-weather-api";
-    meteoLink.target = "_blank";
-    meteoLink.rel = "noreferrer";
-    meteoLink.textContent = "Open-Meteo best-match marine currents";
-    forcing.append(meteoLink, document.createTextNode(" and "));
-    const windLink = document.createElement("a");
-    windLink.href = "https://open-meteo.com/en/docs";
-    windLink.target = "_blank";
-    windLink.rel = "noreferrer";
-    windLink.textContent = "10 m wind forecast";
-    forcing.append(windLink);
-    summary.append(forcing);
-    if (result.coastal_source.data_timestamp) {
-      summary.append(textNode("p", "OpenStreetMap data snapshot: " + result.coastal_source.data_timestamp + ". Query run: " + result.coastal_source.queried_at + "."));
-    } else {
-      summary.append(textNode("p", "OpenStreetMap query: " + result.coastal_source.feature_count + " mapped feature(s) returned · query run " + result.coastal_source.queried_at + ". The service did not provide a snapshot timestamp."));
-    }
+    (result.forecast.sources || []).forEach((source) => {
+      const line = document.createElement("p");
+      line.append(textNode("strong", source.provider + " · "));
+      const sourceLink = document.createElement("a");
+      sourceLink.href = source.url;
+      sourceLink.target = "_blank";
+      sourceLink.rel = "noreferrer";
+      sourceLink.textContent = source.product + " / " + source.dataset;
+      line.append(sourceLink, document.createTextNode(" · " + source.resolution_note));
+      summary.append(line);
+    });
+    const coastalSources = (result.coastal_source.datasets || []).map((source) =>
+      source.provider + ": " + source.feature_count + " feature(s) · " + source.dataset
+      + (source.data_timestamp ? " · snapshot " + source.data_timestamp : ""));
+    summary.append(textNode("p", coastalSources.join(". ") + ". Query run: " + result.coastal_source.queried_at + "."));
     summary.append(textNode("p", result.coastal_source.coverage_note));
     summary.hidden = false;
     const list = $("coastal-site-list");
@@ -928,6 +937,13 @@ $("plan-coastal-impact").addEventListener("click", async () => {
           sourceLink.target = "_blank";
           sourceLink.rel = "noreferrer";
           sourceLink.textContent = "Open source feature ↗";
+          card.append(sourceLink);
+        } else if (props.source === "UNEP-WCMC / IUCN Protected Planet" && props.site_pid) {
+          const sourceLink = document.createElement("a");
+          sourceLink.href = "https://www.protectedplanet.net/" + encodeURIComponent(props.site_pid);
+          sourceLink.target = "_blank";
+          sourceLink.rel = "noreferrer";
+          sourceLink.textContent = "Open protected-area record ↗";
           card.append(sourceLink);
         }
         list.append(card);
