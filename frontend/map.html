@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="styles.css?v=15">
+    <link rel="stylesheet" href="styles.css?v=16">
     <link rel="stylesheet" href="guided-demo.css?v=2">
   </head>
   <body>
@@ -83,6 +83,19 @@
         <div id="real-drift-output" class="simulation-ground-truth" hidden>
           <strong id="real-drift-title"></strong><p id="real-drift-text"></p>
           <p id="real-drift-sources" class="muted"></p>
+          <section id="coastal-planner" class="coastal-planner" hidden aria-labelledby="coastal-planner-title">
+            <div class="coastal-planner-heading"><div><span class="metric-label">COASTAL IMPACT PLANNER · WHAT-IF</span><h3 id="coastal-planner-title">Could this feature drift toward sensitive coastal places?</h3></div></div>
+            <p class="muted">Project a forward sensitivity envelope from the selected feature using current forecast conditions. This is separate from the historical backtrack above.</p>
+            <div class="coastal-planner-controls">
+              <label>Scenario window<select id="coastal-forecast-hours"><option value="24">24 hours</option><option value="36" selected>36 hours</option><option value="48">48 hours</option><option value="72">72 hours</option></select></label>
+              <button id="plan-coastal-impact" class="secondary-button" type="button">Plan possible coastal exposure</button>
+            </div>
+            <div class="coastal-scenario-legend" aria-label="Forecast scenario legend"><span><i class="coastal-line central"></i>Central</span><span><i class="coastal-line lower"></i>Lower windage</span><span><i class="coastal-line higher"></i>Higher windage</span><span><i class="coastal-site-dot"></i>Mapped coastal place</span></div>
+            <p id="coastal-plan-status" class="upload-status" role="status" aria-live="polite">Uses a what-if forecast from the selected radar feature. It does not confirm oil or predict a real impact.</p>
+            <div id="coastal-plan-summary" class="coastal-plan-summary" hidden></div>
+            <div id="coastal-site-list" class="coastal-site-list"></div>
+            <p class="coastal-source-note"><strong>Coastal data:</strong> OpenStreetMap community-mapped reefs, wetlands/mangroves, beaches, and protected areas. NOAA ESI coverage is not confirmed for this location. Mapped places may be incomplete or outdated; no result does not mean no sensitive place exists. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap attribution</a>.</p>
+          </section>
           <div id="real-ais-auto" class="scene-search-form" hidden>
             <h3>Automatic AIS presence search</h3>
             <p class="muted">WakeTrace searches Global Fishing Watch for reported vessel presence in this possible origin area and time window. Results are daily grid-cell leads, not exact routes.</p>
@@ -171,7 +184,7 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="case-data.js?v=3"></script>
-    <script src="map-page.js?v=41"></script>
+    <script src="map-page.js?v=42"></script>
     <script src="guided-demo.js?v=3"></script>
   </body>
 </html>

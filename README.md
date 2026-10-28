@@ -5,7 +5,7 @@ WakeTrace is a prototype workspace for reviewing possible maritime oil-slick cas
 ## What is in the current version
 
 - **Overview** introduces the case and launches the guided practice demonstration.
-- **Map** shows the scene and case geometry, supports Copernicus Sentinel-1 search, screens imagery with a dark-feature detector and experimental AI model, runs drift analysis, and reviews vessel data.
+- **Map** shows the scene and case geometry, supports Copernicus Sentinel-1 search, screens imagery with a dark-feature detector and experimental AI model, runs drift analysis, reviews vessel data, and includes a coastal impact what-if planner.
 - **Evidence** presents observation time, the configured release search window, sources, model settings, uncertainty, and vessel-screening results.
 - **Guided synthetic demonstration** walks through six visual steps with a generated radar-style scene, animated current/oil, a possible-origin area, fictional vessel tracks, and ranked practice leads.
 - **Backend API** serves the frontend, processes requested real scene imagery, runs both radar screens and the real drift model, and accepts AIS exports supplied by the analyst.
@@ -64,6 +64,8 @@ Use this workflow when reviewing an actual scene. The six visual demo steps abov
 5. **Review vessel information.** WakeTrace can query optional Global Fishing Watch AIS presence for the modeled area and dates. These are daily grid-cell presence leads, not exact positions or continuous routes. For a detailed comparison, provide an authorized AIS CSV with columns vessel_id, timestamp, longitude, and latitude; position_accuracy_m is optional. Enter the actual provider and dataset. The matcher compares reported tracks against the origin area, release window, and sampled particle corridor where timestamps align. It does not fetch commercial AIS data.
 6. **Assess, save, and revisit the case.** Review the Map, case provenance, coverage gaps, ranking factors, and uncertainty. Save a reviewed real-data case from Map; the API stores it under data/cases/. Reopen a case through its case link/query. A high rank is a screening priority only. Missing AIS reports do not show that a vessel was absent, and no result assigns responsibility.
 
+7. **Explore coastal exposure scenarios.** After choosing a possible radar feature and completing its drift review, select **Plan possible coastal exposure**. WakeTrace starts a separate forward what-if from the feature location at the forecast start time. Three sensitivity paths vary current speed and windage. Nearby OpenStreetMap-mapped reefs, wetlands/mangroves, beaches, and protected areas are listed with distance and approximate time steps within a 10 km review screen. This is not a continuation of the historical backtrack, a probability envelope, or a confirmed impact forecast. NOAA ESI coverage is not confirmed for Mauritius; the planner does not draw NOAA layers. OSM coverage can be incomplete. See every source and limitation in the planner and saved case.
+
 
 ### Experimental AI runtime
 
@@ -91,6 +93,7 @@ For the automatic daily presence query, configure GFW_API_TOKEN in the project-r
 - **Radar screening:** The rule-based detector screens calibrated Sentinel-1 sigma0 backscatter GeoTIFFs in dB for connected dark regions. The separate experimental AI model, **WakeTrace experimental Sentinel-1 slick-like TinyUNet v1**, was trained on 173 labeled Sentinel-1 tiles from Cantarell in the Gulf of Mexico (108 train, 43 validation, 22 held-out test). Its held-out test slick IoU was 0.618; this in-domain result does not establish performance in Mauritius. Model scores are not oil probabilities. Neither screen confirms oil. No real satellite scene is bundled with the project. See the [model card](backend/models/MODEL_CARD.md) and [training report](backend/models/oil_slick_training_report.json).
 - **Drift:** OpenDrift backtracks a particle ensemble using Open-Meteo ERA5 and ERA5-Ocean reanalysis. Approximate grid spacing is about 25 km for wind and 50 km for current. Coastal circulation, waves, shoreline effects, oil properties, and forcing uncertainty limit precision; this is not an operational spill forecast.
 - **Vessel presence:** Global Fishing Watch results are aggregated daily cells and can have incomplete coverage. A cell center is approximate and must not be drawn as a precise vessel route.
+- **Coastal what-if:** Open-Meteo forecast currents and 10 m winds are sampled at the starting point and held spatially uniform along three deterministic scenarios. The prototype omits waves, oil properties, weathering, shoreline interaction, and local circulation. Coastal places are community-mapped OpenStreetMap features queried from Overpass; absence from the map is not evidence of absence. The 10 km proximity screen is only a review aid.
 - **Detailed AIS matching:** Scores and candidate order are review aids, not probabilities. Short gaps may be interpolated only under matcher limits; long gaps and implausible jumps break route segments. A match does not prove a vessel caused a release.
 - **Coordinates and time:** GeoJSON positions use WGS84 longitude, latitude order. Timestamps use ISO 8601 UTC, normally ending in Z.
 - **Provenance:** Review the source provider, dataset/product, time range, area, model settings, and uncertainty recorded with each result. Saved cases are local project files and are ignored by Git by default; handle or share them according to your team's data rules.
@@ -125,6 +128,7 @@ The API runs on port 8002. Full schemas are shown at http://localhost:8002/docs.
 | POST /api/simulation/practice | Generate and run an offline synthetic practice scene. |
 | POST /api/satellite/scenes/{scene_id}/drift | Backtrack a selected real feature using reanalysis forcing. |
 | POST /api/vessels/search-presence | Query optional Global Fishing Watch daily presence. |
+| POST /api/coastal/impact-plan | Build forecast sensitivity paths and query nearby OpenStreetMap coastal places. |
 | POST /api/vessels/match | Compare an analyst-supplied AIS CSV with a completed drift estimate. |
 
 The satellite search takes west, south, east, north, start_date, end_date, and optional polarization query parameters. API request/response models and validation messages are documented in the interactive API reference.

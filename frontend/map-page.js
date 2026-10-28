@@ -30,6 +30,7 @@ let userChoseMapArea = false;
 let selectedScene = null;
 let selectedSceneBounds = null;
 let trajectoryPlayback = null;
+let coastalPlanLayer = null;
 
 function vesselIcon(variant = "report") {
   const report = variant === "report";
@@ -767,6 +768,11 @@ async function showCatalogQuicklook(scene, form, status, processingError) {
 
 async function estimateRealDrift(candidate, button) {
   if (!selectedScene || !selectedSceneBounds) return;
+  window.currentCoastalSeedGeometry = candidate.geometry;
+  if (coastalPlanLayer && layers) layers.removeLayer(coastalPlanLayer);
+  coastalPlanLayer = null;
+  window.currentCoastalPlan = null;
+  if (window.realCaseData) delete window.realCaseData.coastal_impact_plan;
   const status = $("real-drift-status");
   button.disabled = true;
   document.querySelectorAll("#real-detection-results .scene-select-button").forEach((item) => { item.disabled = true; });
@@ -797,6 +803,10 @@ async function estimateRealDrift(candidate, button) {
     $("real-drift-text").textContent = "OpenDrift backtracked this selected radar feature to an uncertain possible origin area. Search window: " + start + " to " + end + ". " + result.drift.uncertainty_note;
     $("real-drift-sources").textContent = "Real data used: " + result.drift.provenance.input_sources.map((source) => source.product + " (" + source.dataset + ")").join(" and ") + ". The release window is the model search period, not a measured spill time.";
     $("real-drift-output").hidden = false;
+    $("coastal-planner").hidden = false;
+    $("coastal-plan-summary").hidden = true;
+    $("coastal-site-list").replaceChildren();
+    $("coastal-plan-status").textContent = "Ready. Forecast scenarios start at the selected feature's location now; the satellite acquisition time is not treated as a live position.";
     window.currentRealDrift = result.drift;
     configureTrajectoryPlayback(result.drift, [], "Modeled particle paths replay the backward drift estimate from the possible origin area toward the observed dark feature. This is a model, not a measured spill route.");
     window.realCaseData.drift = result.drift;
@@ -813,6 +823,127 @@ async function estimateRealDrift(candidate, button) {
     document.querySelectorAll("#real-detection-results .scene-select-button").forEach((item) => { item.disabled = false; });
   }
 }
+
+$("plan-coastal-impact").addEventListener("click", async () => {
+  const button = $("plan-coastal-impact");
+  const status = $("coastal-plan-status");
+  if (!window.currentCoastalSeedGeometry) {
+    status.textContent = "Select a possible radar feature and complete its drift review first.";
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "Fetching public wind/current forecasts and nearby mapped coastal features…";
+  if (coastalPlanLayer && layers) layers.removeLayer(coastalPlanLayer);
+  coastalPlanLayer = null;
+  $("coastal-plan-summary").hidden = true;
+  $("coastal-site-list").replaceChildren();
+  try {
+    const response = await fetch(apiRoot() + "/api/coastal/impact-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        geometry: window.currentCoastalSeedGeometry,
+        forecast_hours: Number($("coastal-forecast-hours").value),
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "The coastal what-if scenario could not be completed.");
+    if (coastalPlanLayer && layers) layers.removeLayer(coastalPlanLayer);
+    coastalPlanLayer = L.layerGroup().addTo(layers);
+    const scenarioColors = ["#60d9ce", "#ffc86c", "#bca4ff"];
+    result.scenarios.forEach((scenario, index) => {
+      const latlngs = scenario.track.map((item) => [item.coordinates[1], item.coordinates[0]]);
+      L.polyline(latlngs, { color: scenarioColors[index % scenarioColors.length], weight: index === 1 ? 4 : 2.5, opacity: .9, dashArray: index === 1 ? null : "7 6" })
+        .bindPopup(textNode("span", scenario.name + " · what-if path; not an observed slick route"))
+        .addTo(coastalPlanLayer);
+    });
+    result.coastal_features.features.forEach((feature) => {
+      const props = feature.properties || {};
+      const exposed = props.within_10km;
+      const style = { color: exposed ? "#ff8a72" : "#b6d4df", weight: exposed ? 3 : 1.5, fillColor: exposed ? "#ff8a72" : "#85aab7", fillOpacity: exposed ? .24 : .1, radius: exposed ? 8 : 6 };
+      const popup = document.createElement("div");
+      popup.append(textNode("strong", (exposed ? "Priority " : "Nearby ") + props.priority_rank + " · " + (props.name || props.category || "Mapped coastal feature")));
+      popup.append(textNode("div", (props.category || "Coastal feature") + " · " + props.distance_km + " km from nearest scenario"));
+      if (props.arrival_window) popup.append(textNode("div", "10 km proximity window: " + props.arrival_window[0] + " to " + props.arrival_window[1]));
+      if (["node", "way", "relation"].includes(props.osm_type) && Number.isInteger(Number(props.osm_id))) {
+        const sourceLink = document.createElement("a");
+        sourceLink.href = "https://www.openstreetmap.org/" + props.osm_type + "/" + Number(props.osm_id);
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noreferrer";
+        sourceLink.textContent = "Open source feature";
+        popup.append(sourceLink);
+      }
+      L.geoJSON(feature, {
+        style,
+        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, style),
+      }).bindPopup(popup).addTo(coastalPlanLayer);
+    });
+    const closeSites = result.coastal_features.features.filter((feature) => feature.properties?.within_10km);
+    const summary = $("coastal-plan-summary");
+    summary.replaceChildren();
+    summary.append(textNode("strong", closeSites.length
+      ? closeSites.length + " mapped place(s) fall within 10 km of at least one scenario."
+      : "No returned mapped place fell within 10 km of the scenarios."));
+    summary.append(textNode("p", result.model.uncertainty_note));
+    summary.append(textNode("p", "Scenario start: " + result.forecast.start + " · data through " + result.forecast.end + " · " + result.forecast.hours_returned + " forecast hours."));
+    const forcing = document.createElement("p");
+    forcing.append(textNode("span", "Forcing: "));
+    const meteoLink = document.createElement("a");
+    meteoLink.href = "https://open-meteo.com/en/docs/marine-weather-api";
+    meteoLink.target = "_blank";
+    meteoLink.rel = "noreferrer";
+    meteoLink.textContent = "Open-Meteo best-match marine currents";
+    forcing.append(meteoLink, document.createTextNode(" and "));
+    const windLink = document.createElement("a");
+    windLink.href = "https://open-meteo.com/en/docs";
+    windLink.target = "_blank";
+    windLink.rel = "noreferrer";
+    windLink.textContent = "10 m wind forecast";
+    forcing.append(windLink);
+    summary.append(forcing);
+    if (result.coastal_source.data_timestamp) {
+      summary.append(textNode("p", "OpenStreetMap data snapshot: " + result.coastal_source.data_timestamp + ". Query run: " + result.coastal_source.queried_at + "."));
+    } else {
+      summary.append(textNode("p", "OpenStreetMap query: " + result.coastal_source.feature_count + " mapped feature(s) returned · query run " + result.coastal_source.queried_at + ". The service did not provide a snapshot timestamp."));
+    }
+    summary.append(textNode("p", result.coastal_source.coverage_note));
+    summary.hidden = false;
+    const list = $("coastal-site-list");
+    const shown = result.coastal_features.features.slice(0, 8);
+    if (!shown.length) {
+      list.append(textNode("p", "No matching coastal features were returned for this area. OpenStreetMap coverage may be incomplete; this does not indicate that the coast has no sensitive places.", "empty-state"));
+    } else {
+      shown.forEach((feature) => {
+        const props = feature.properties || {};
+        const card = document.createElement("article");
+        card.className = "coastal-site-card" + (props.within_10km ? " coastal-site-near" : "");
+        card.append(textNode("strong", (props.within_10km ? "Priority " : "Nearby ") + props.priority_rank + " · " + (props.name || props.category || "Mapped coastal feature")));
+        card.append(textNode("span", props.category || "Coastal feature", "coastal-category"));
+        card.append(textNode("p", props.distance_km + " km from nearest scenario path" + (props.arrival_window
+          ? " · 10 km proximity window " + props.arrival_window[0] + " to " + props.arrival_window[1]
+          : " · outside the 10 km review screen")));
+        if (["node", "way", "relation"].includes(props.osm_type) && Number.isInteger(Number(props.osm_id))) {
+          const sourceLink = document.createElement("a");
+          sourceLink.href = "https://www.openstreetmap.org/" + props.osm_type + "/" + Number(props.osm_id);
+          sourceLink.target = "_blank";
+          sourceLink.rel = "noreferrer";
+          sourceLink.textContent = "Open source feature ↗";
+          card.append(sourceLink);
+        }
+        list.append(card);
+      });
+    }
+    const pointBounds = result.scenarios.flatMap((scenario) => scenario.track.map((item) => [item.coordinates[1], item.coordinates[0]]));
+    if (pointBounds.length) map.fitBounds(L.latLngBounds(pointBounds), { padding: [36, 36], maxZoom: 11 });
+    status.textContent = "Forecast and coastal data sources are recorded below. These scenario paths are not observed slick movement.";
+    window.currentCoastalPlan = result;
+    window.realCaseData.coastal_impact_plan = result;
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 async function searchAutomaticAISPresence(drift) {
   const button = $("search-ais-presence");

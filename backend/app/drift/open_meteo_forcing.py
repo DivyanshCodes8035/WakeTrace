@@ -47,7 +47,8 @@ def _geometry_points(geometry: dict[str, Any]) -> list[list[float]]:
 def _write_reader_file(path: Path, times: list[datetime], latitudes: np.ndarray,
                        longitudes: np.ndarray, eastward: np.ndarray,
                        northward: np.ndarray, standard_names: tuple[str, str],
-                       variable_names: tuple[str, str]) -> None:
+                       variable_names: tuple[str, str],
+                       source: str = "Open-Meteo public API") -> None:
     coords = {
         "time": np.asarray(times, dtype="datetime64[ns]"),
         "latitude": latitudes,
@@ -59,7 +60,7 @@ def _write_reader_file(path: Path, times: list[datetime], latitudes: np.ndarray,
             variable_names[1]: (("time", "latitude", "longitude"), northward),
         },
         coords=coords,
-        attrs={"Conventions": "CF-1.8", "source": "Open-Meteo public historical API"},
+        attrs={"Conventions": "CF-1.8", "source": source},
     )
     for name, standard_name in zip(variable_names, standard_names):
         ds[name].attrs.update({"standard_name": standard_name, "units": "m s-1"})
@@ -178,3 +179,130 @@ def fetch_readers(
         },
     ]
     return readers, sources
+
+
+def fetch_forecast_readers(
+    *, geometry: dict[str, Any], forecast_hours: int, output_directory: Path,
+) -> tuple[list[Any], list[dict[str, Any]], datetime, dict[str, Any]]:
+    """Build OpenDrift forecast readers from Open-Meteo marine and 10 m wind grids."""
+    try:
+        from opendrift.readers import reader_netCDF_CF_generic
+    except ImportError as exc:
+        raise RuntimeError("OpenDrift readers are unavailable. Install backend requirements first.") from exc
+
+    points = _geometry_points(geometry)
+    lon0 = float(np.mean([float(point[0]) for point in points]))
+    lat0 = float(np.mean([float(point[1]) for point in points]))
+    west, east = max(-180.0, lon0 - 1.25), min(180.0, lon0 + 1.25)
+    south, north = max(-80.0, lat0 - 1.25), min(85.0, lat0 + 1.25)
+    longitudes = np.linspace(west, east, 9)
+    latitudes = np.linspace(south, north, 9)
+    grid = [(lat, lon) for lat in latitudes for lon in longitudes]
+    params = {
+        "latitude": ",".join(f"{lat:.5f}" for lat, _ in grid),
+        "longitude": ",".join(f"{lon:.5f}" for _, lon in grid),
+        "forecast_hours": forecast_hours + 1,
+        "timezone": "GMT",
+        "cell_selection": "sea",
+    }
+    try:
+        with httpx.Client(timeout=httpx.Timeout(60.0, connect=15.0)) as client:
+            marine = client.get(MARINE_API, params={
+                **params,
+                "hourly": "ocean_current_velocity,ocean_current_direction",
+            })
+            marine.raise_for_status()
+            wind = client.get("https://api.open-meteo.com/v1/forecast", params={
+                **params,
+                "hourly": "wind_speed_10m,wind_direction_10m",
+                "wind_speed_unit": "ms",
+            })
+            wind.raise_for_status()
+        current_rows = _locations(marine.json(), len(grid), "Open-Meteo marine forecast")
+        wind_rows = _locations(wind.json(), len(grid), "Open-Meteo wind forecast")
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError(f"Could not download public forecast wind/current data: {str(exc)[:300]}") from exc
+
+    labels = current_rows[0]["hourly"].get("time", [])
+    if len(labels) < forecast_hours + 1:
+        raise RuntimeError("Open-Meteo returned too few forecast hours for the requested scenario.")
+    times = [_parse_time(label) for label in labels[:forecast_hours + 1]]
+    nt, ny, nx = len(times), len(latitudes), len(longitudes)
+    uo = np.full((nt, ny, nx), np.nan, dtype=float)
+    vo = np.full_like(uo, np.nan)
+    uw = np.full_like(uo, np.nan)
+    vw = np.full_like(uo, np.nan)
+    for index, (current, wind_row) in enumerate(zip(current_rows, wind_rows)):
+        ch, wh = current["hourly"], wind_row["hourly"]
+        if ch.get("time", [])[:nt] != labels[:nt] or wh.get("time", [])[:nt] != labels[:nt]:
+            raise RuntimeError("Open-Meteo wind and current forecast timestamps do not align.")
+        cv = np.asarray(ch.get("ocean_current_velocity", [])[:nt], dtype=float) / 3.6
+        cd = np.deg2rad(np.asarray(ch.get("ocean_current_direction", [])[:nt], dtype=float))
+        ws = np.asarray(wh.get("wind_speed_10m", [])[:nt], dtype=float)
+        wd = np.deg2rad(np.asarray(wh.get("wind_direction_10m", [])[:nt], dtype=float))
+        if any(len(values) != nt for values in (cv, cd, ws, wd)):
+            raise RuntimeError("Open-Meteo returned incomplete forecast arrays.")
+        iy, ix = divmod(index, nx)
+        uo[:, iy, ix], vo[:, iy, ix] = cv * np.sin(cd), cv * np.cos(cd)
+        # Marine current directions point toward; meteorological wind directions point from.
+        uw[:, iy, ix], vw[:, iy, ix] = -ws * np.sin(wd), -ws * np.cos(wd)
+
+    from scipy.ndimage import distance_transform_edt
+
+    filled_grid_cells = 0
+    for time_index in range(nt):
+        for field in (uo, vo, uw, vw):
+            plane = field[time_index]
+            valid = np.isfinite(plane)
+            if not valid.any():
+                raise RuntimeError("The forecast has no usable wind/current data at this time.")
+            if not valid.all():
+                nearest = distance_transform_edt(~valid, return_distances=False, return_indices=True)
+                filled_grid_cells += int((~valid).sum())
+                plane[~valid] = plane[tuple(nearest[:, ~valid])]
+
+    output_directory.mkdir(parents=True, exist_ok=True)
+    current_path = output_directory / "open_meteo_forecast_currents.nc"
+    wind_path = output_directory / "open_meteo_forecast_winds.nc"
+    _write_reader_file(
+        current_path, times, latitudes, longitudes, uo, vo,
+        ("x_sea_water_velocity", "y_sea_water_velocity"), ("uo", "vo"),
+        "Open-Meteo global marine forecast currents",
+    )
+    _write_reader_file(
+        wind_path, times, latitudes, longitudes, uw, vw,
+        ("x_wind", "y_wind"), ("eastward_wind", "northward_wind"),
+        "Open-Meteo best-match 10 m wind forecast",
+    )
+    readers = [
+        reader_netCDF_CF_generic.Reader(str(current_path), name="Open-Meteo marine forecast currents"),
+        reader_netCDF_CF_generic.Reader(str(wind_path), name="Open-Meteo 10 m wind forecast"),
+    ]
+    period = {"start": times[0].isoformat().replace("+00:00", "Z"),
+              "end": times[-1].isoformat().replace("+00:00", "Z")}
+    bounds = [west, south, east, north]
+    sources = [
+        {
+            "provider": "Open-Meteo / Copernicus Marine Service Information (Météo-France SMOC currents)",
+            "product": "Best-match global marine forecast",
+            "dataset": "Hourly ocean current velocity and direction",
+            "url": MARINE_API,
+            "variables": ["ocean_current_velocity", "ocean_current_direction"],
+            "time_range": period,
+            "area": bounds,
+            "resolution_note": "The selected global marine model is up to approximately 0.08° (~8 km); Open-Meteo best-match/model availability varies by location and time. Forecast uncertainty is not a local operational guarantee.",
+        },
+        {
+            "provider": "Open-Meteo best-match weather forecast",
+            "product": "Global 10 m wind forecast",
+            "dataset": "Hourly wind speed and direction",
+            "url": "https://api.open-meteo.com/v1/forecast",
+            "variables": ["wind_speed_10m", "wind_direction_10m"],
+            "time_range": period,
+            "area": bounds,
+            "resolution_note": "Best-match model selection with sea-grid-cell preference; spatial resolution varies by model and location.",
+        },
+    ]
+    metadata = {"period": period, "area": bounds, "grid_shape": [ny, nx],
+                "filled_grid_values": filled_grid_cells}
+    return readers, sources, times[0], metadata

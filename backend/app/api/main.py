@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import rasterio
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,7 @@ from app.drift.open_meteo_forcing import fetch_readers
 from app.drift.simulation import DriftInputError, estimate_origin
 from app.vessels.gfw_presence import AISPresenceError, search_gfw_presence
 from app.vessels.matching import VesselMatchingInputError, match_vessel_candidates
+from app.coastal.planner import create_impact_plan
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEMO_CASE_PATH = PROJECT_ROOT / "data" / "sample" / "demo_case.json"
@@ -132,6 +134,11 @@ class AISMatchRequest(BaseModel):
 
 class AISPresenceRequest(BaseModel):
     drift: dict[str, Any]
+
+
+class CoastalImpactRequest(BaseModel):
+    geometry: dict[str, Any]
+    forecast_hours: int = Field(default=36, ge=6, le=72)
 
 
 def _validated_bbox(values: list[float], max_span: float = 5.0) -> list[float]:
@@ -386,4 +393,17 @@ async def search_automatic_ais_presence(request: AISPresenceRequest) -> dict[str
     try:
         return await search_gfw_presence(request.drift)
     except AISPresenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/coastal/impact-plan")
+async def coastal_impact_plan(request: CoastalImpactRequest) -> dict[str, Any]:
+    """Build a forecast what-if envelope and rank nearby mapped coastal features."""
+    try:
+        return await create_impact_plan(request.geometry, request.forecast_hours)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="A public forecast or coastal-map service is unavailable. Please retry shortly.") from exc
+    except (RuntimeError, OSError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0b2236">
     <title>WakeTrace | Case overview</title>
-    <link rel="stylesheet" href="styles.css?v=15">
+    <link rel="stylesheet" href="styles.css?v=22">
   </head>
   <body class="overview-page">
     <div class="ambient-globe" aria-hidden="true"><div class="globe-shell"><div class="globe-texture"></div></div></div>
@@ -19,15 +19,20 @@
       <div class="header-context"><span class="status-dot" aria-hidden="true"></span> Investigation workspace</div>
     </header>
 
-    <section class="overview-hero" aria-label="Synthetic ocean scene">
-      <canvas id="overview-hero-canvas" aria-hidden="true"></canvas>
-      <div class="overview-hero-veil" aria-hidden="true"></div>
-      <div class="overview-hero-overlay">
-        <span class="eyebrow overview-hero-tag">GUIDED PRACTICE · SYNTHETIC</span>
-        <p class="overview-hero-title">Follow the clues.<br>Keep uncertainty in view.</p>
-        <p class="overview-hero-copy">See how radar screening, ocean drift, and vessel reports can connect during an investigation.</p>
-        <a class="primary-button overview-hero-cta" href="map.html?demo=1">Run one-click demo <span aria-hidden="true">→</span></a>
-        <a class="overview-hero-scroll" href="#case-details">Scroll for case details</a>
+    <section class="overview-hero" aria-label="Illustrative cinematic ocean scene">
+      <div class="overview-hero-stage">
+        <canvas id="overview-hero-canvas" aria-hidden="true"></canvas>
+        <div class="overview-hero-flare" aria-hidden="true"></div>
+        <div class="overview-hero-haze" aria-hidden="true"></div>
+        <div class="overview-hero-veil" aria-hidden="true"></div>
+        <div class="overview-hero-grain" aria-hidden="true"></div>
+        <div class="overview-hero-overlay">
+          <span class="eyebrow overview-hero-tag">LIVE SURFACE · ILLUSTRATIVE VESSEL</span>
+          <p class="overview-hero-title">Follow the clues.<br>Keep uncertainty in view.</p>
+          <p class="overview-hero-copy">See how satellite screening, ocean drift, and vessel evidence can connect.</p>
+          <a class="primary-button overview-hero-cta" href="map.html?demo=1">Explore WakeTrace <span aria-hidden="true">→</span></a>
+          <a class="overview-hero-scroll" href="#case-details">Continue to case details ↓</a>
+        </div>
       </div>
     </section>
 
@@ -86,7 +91,7 @@
       <footer class="page-footer">WakeTrace is an investigation review prototype. Missing data is shown as unavailable, not inferred.</footer>
     </main>
     <script src="case-data.js?v=3"></script>
-    <script src="overview-hero.js?v=9"></script>
+    <script src="overview-hero.js?v=19"></script>
     <script src="overview.js"></script>
   </body>
 </html>

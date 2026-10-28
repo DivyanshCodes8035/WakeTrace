@@ -10,13 +10,13 @@
   /* ── Sea layer: a WebGL fragment shader sits under this 2D canvas ───────── */
   const sea = document.createElement("canvas");
   sea.setAttribute("aria-hidden", "true");
-  hero.insertBefore(sea, canvas);
+  canvas.parentElement.insertBefore(sea, canvas);
   const gl = sea.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
 
   const VERT = "attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}";
   const FRAG = `
 precision highp float;
-uniform vec2 uCss; uniform float uDpr, uTime;
+uniform vec2 uCss; uniform float uDpr, uTime, uReveal;
 uniform vec4 uA[3]; // ship x, y, heading, size
 uniform vec4 uB[3]; // opacity, half length, half width
 
@@ -43,7 +43,35 @@ vec3 waves(vec2 p,float t,float gust,float calm){
 
 void main(){
   vec2 px=vec2(gl_FragCoord.x,uCss.y*uDpr-gl_FragCoord.y)/uDpr;
-  float yn=px.y/uCss.y,k=.74+.40*yn,t=uTime;
+  float screenY=px.y/uCss.y,t=uTime;
+  float reveal=uReveal,horizon=mix(.16,.39,reveal),sunX=.70,sunY=horizon-.135;
+  float aspect=uCss.x/max(uCss.y,1.);
+  if(screenY<horizon){
+    float sy=clamp(screenY/max(horizon,.001),0.,1.);
+    vec3 sky=mix(vec3(.012,.022,.052),vec3(.065,.066,.105),smoothstep(0.,.48,sy));
+    sky=mix(sky,vec3(.30,.105,.125),smoothstep(.40,.69,sy));
+    sky=mix(sky,vec3(.72,.245,.115),smoothstep(.64,.88,sy));
+    sky=mix(sky,vec3(.92,.45,.22),smoothstep(.84,1.,sy));
+    float cloudWarp=fbm(vec2(px.x/uCss.x*2.3-t*.003,sy*3.2));
+    float cloudA=fbm(vec2(px.x/uCss.x*4.5+cloudWarp*.72+t*.002,sy*6.2+cloudWarp*.35));
+    float cloudB=fbm(vec2(px.x/uCss.x*8.0-t*.005,sy*10.0));
+    float clouds=(smoothstep(.55,.72,cloudA)*.78+smoothstep(.61,.77,cloudB)*.22);
+    clouds*=smoothstep(.10,.30,sy)*(1.-smoothstep(.82,.98,sy));
+    vec3 cloudTone=mix(vec3(.08,.09,.14),vec3(.78,.30,.18),smoothstep(.35,.9,sy));
+    vec3 cloudLit=mix(vec3(.20,.19,.23),vec3(.98,.58,.34),smoothstep(.46,.94,sy));
+    sky=mix(sky,mix(cloudTone,cloudLit,smoothstep(.55,.78,cloudA)*.55),clamp(clouds,0.,1.)*.30);
+    vec2 sun=vec2((px.x/uCss.x-sunX)*aspect,screenY-sunY);
+    float sunDist=length(sun);
+    sky+=vec3(1.,.35,.12)*exp(-sunDist*sunDist/.026)*.34;
+    sky+=vec3(1.,.78,.53)*(1.-smoothstep(.021,.034,sunDist))*.78;
+    sky+=vec3(.16,.055,.025)*(fbm(vec2(px.x/uCss.x*7.,sy*8.+t*.002))-.5)*smoothstep(.1,.35,sy);
+    sky=1.-exp(-sky*1.18);
+    sky=pow(sky,vec3(.4545));
+    sky+=(hash(gl_FragCoord.xy+t)-.5)/320.;
+    gl_FragColor=vec4(sky,1.);
+    return;
+  }
+  float yn=clamp((screenY-horizon)/max(1.-horizon,.001),0.,1.),k=.74+.40*yn;
   vec2 wp=vec2((px.x-uCss.x*.5)/k,log(k/.74)/.40*uCss.y/.85);
 
   // ships: wake, bow foam, shadow
@@ -91,6 +119,8 @@ void main(){
   col=mix(col,sky,F*.95);
   float sp=pow(sd,1400.)*26.+pow(sd,140.)*1.4+pow(sd,22.)*.12;
   col+=vec3(1.,.93,.78)*sp*(1.-.85*calm);
+  float sunPath=exp(-pow((px.x/uCss.x-sunX)/(.014+.075*yn),2.))*exp(-yn*1.2);
+  col+=vec3(1.,.28,.075)*sunPath*(.018+.28*pow(sd,28.))*(1.-.75*calm);
 
   // whitecaps (patchy, wind-streaked) + wake foam
   vec2 sw=vec2(dot(wp,vec2(.85,.52)),dot(wp,vec2(-.52,.85)))*vec2(.22,.5);
@@ -127,7 +157,7 @@ void main(){
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
         const a = gl.getAttribLocation(prog, "a");
         gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
-        ["uCss", "uDpr", "uTime", "uA", "uB"].forEach((n) => { loc[n] = gl.getUniformLocation(prog, n); });
+        ["uCss", "uDpr", "uTime", "uReveal", "uA", "uB"].forEach((n) => { loc[n] = gl.getUniformLocation(prog, n); });
         glOK = true;
       }
     }
@@ -138,12 +168,13 @@ void main(){
   const SQUASH = 0.85;
   const dims = { tanker: [38, 10], cargo: [30, 8.5], workboat: [18, 5.5] };
   const ships = [
-    { kind: "tanker", route: [[-0.16, 0.3], [0.22, 0.25], [0.68, 0.15], [1.16, 0.22]], duration: 68, offset: 0.27, scale: 1.35, phase: 0.4 },
-    { kind: "cargo", route: [[1.16, 0.7], [0.78, 0.62], [0.34, 0.84], [-0.16, 0.76]], duration: 84, offset: 0.68, scale: 1.02, phase: 2.1 },
-    { kind: "workboat", route: [[-0.16, 0.91], [0.22, 0.84], [0.68, 0.98], [1.16, 0.86]], duration: 102, offset: 0.43, scale: 0.72, phase: 4.3 },
+    { kind: "tanker", route: [[1.16, 0.58], [0.78, 0.53], [0.32, 0.50], [-0.16, 0.55]], duration: 68, offset: 0.27, scale: 1.35, phase: 0.4 },
+    { kind: "cargo", route: [[1.16, 0.68], [0.78, 0.62], [0.34, 0.78], [-0.16, 0.72]], duration: 84, offset: 0.68, scale: 1.02, phase: 2.1 },
+    { kind: "workboat", route: [[1.16, 0.88], [0.72, 0.82], [0.28, 0.93], [-0.16, 0.85]], duration: 102, offset: 0.43, scale: 0.72, phase: 4.3 },
   ];
 
-  let width = 0, height = 0, dpr = 1, running = false, visible = true, inView = true, raf = 0, last = 0, t = 0;
+  let width = 0, height = 0, dpr = 1, running = false, visible = true, inView = true, raf = 0, last = 0, t = 0, reveal = 0;
+  const revealSeconds = 3.8;
   const persp = (yn) => 0.74 + 0.4 * yn; // same depth scale the shader uses
 
   function resize() {
@@ -188,7 +219,7 @@ void main(){
   function drawHull(kind, s, heading) {
     ctx.lineJoin = "round";
     hullPath(kind, s);
-    ctx.fillStyle = kind === "tanker" ? "#b9c2cb" : kind === "cargo" ? "#d4e0e8" : "#f1f5f9";
+    ctx.fillStyle = kind === "tanker" ? "#7b8792" : kind === "cargo" ? "#9ca8b3" : "#aab5bf";
     ctx.fill();
     ctx.save(); hullPath(kind, s); ctx.clip();
     const [lx, ly] = lightLocal(heading), r = 12 * s;
@@ -205,7 +236,7 @@ void main(){
       ctx.fillStyle = "#0f172a";
       for (let i = 0; i < 5; i += 1) ctx.fillRect((-22 + i * 6) * s, -6 * s, 3.2 * s, 12 * s);
     } else if (kind === "cargo") {
-      const tints = ["#b45309", "#1d4ed8", "#be123c", "#0f766e", "#ca8a04", "#475569"];
+      const tints = ["#75614e", "#3b5267", "#6b4c4d", "#46615b", "#776d56", "#4a5662"];
       for (let c = 0; c < 5; c += 1) for (let row = 0; row < 3; row += 1) {
         block(-11 + c * 6.2, -6.2 + row * 4.3, 5.4, 3.8, s, tints[(c * 3 + row * 2) % tints.length], heading);
       }
@@ -275,15 +306,6 @@ void main(){
     }
   }
 
-  function drawScan(time) {
-    const y = ((time * 28) % (height + 160)) - 80;
-    const band = ctx.createLinearGradient(0, y - 40, 0, y + 40);
-    band.addColorStop(0, "rgba(45,212,191,0)"); band.addColorStop(0.5, "rgba(94,234,212,0.07)"); band.addColorStop(1, "rgba(45,212,191,0)");
-    ctx.fillStyle = band; ctx.fillRect(0, y - 40, width, 80);
-    ctx.strokeStyle = "rgba(165,243,252,0.14)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-  }
-
   function renderSea() {
     const A = new Float32Array(12), B = new Float32Array(12);
     ships.forEach((s, i) => {
@@ -292,6 +314,7 @@ void main(){
       B.set([s.opacity, hl * s.s, hw * s.s * SQUASH, 0], i * 4);
     });
     gl.uniform2f(loc.uCss, width, height); gl.uniform1f(loc.uDpr, dpr); gl.uniform1f(loc.uTime, t);
+    gl.uniform1f(loc.uReveal, reveal);
     gl.uniform4fv(loc.uA, A); gl.uniform4fv(loc.uB, B);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -299,13 +322,32 @@ void main(){
   function paintFrame(now) {
     const dt = Math.min(0.05, ((now - last) / 1000) || 0.016);
     last = now; t += dt;
+    reveal = reduced ? 1 : smoothstep(t / revealSeconds);
     updateShips();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
     if (glOK) renderSea();
-    else { ctx.fillStyle = "#06303a"; ctx.fillRect(0, 0, width, height); }
+    else {
+      const horizon = height * (0.16 + 0.23 * reveal);
+      const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+      sky.addColorStop(0, "#101a32"); sky.addColorStop(0.58, "#874340"); sky.addColorStop(1, "#e88b46");
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, width, horizon);
+      const seaFill = ctx.createLinearGradient(0, horizon, 0, height);
+      seaFill.addColorStop(0, "#182938"); seaFill.addColorStop(1, "#020a13");
+      ctx.fillStyle = seaFill; ctx.fillRect(0, horizon, width, height - horizon);
+      for (let row = 0; row < 34; row++) {
+        const d = row / 33, y = horizon + (height - horizon) * (0.04 + d * 0.93);
+        ctx.beginPath();
+        for (let x = -8; x < width + 8; x += 16) {
+          const phase = x * (0.013 + d * 0.02) + t * (0.7 + d * 0.5) + row * 1.3;
+          const yy = y + Math.sin(phase) * (1 + d * 4) + Math.sin(phase * 0.53) * (0.5 + d * 1.8);
+          if (x < 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+        }
+        ctx.strokeStyle = `rgba(152,179,192,${0.025 + d * 0.045})`;
+        ctx.lineWidth = 0.6 + d * 0.7; ctx.stroke();
+      }
+    }
     drawShips();
-    drawScan(t);
   }
 
   function loop(now) {
@@ -322,7 +364,7 @@ void main(){
   function stop() { running = false; cancelAnimationFrame(raf); }
 
   resize();
-  t = 14; // start mid-voyage so ships and wakes are already in view
+  t = 0;
   start();
   window.addEventListener("resize", () => { resize(); start(); });
   document.addEventListener("visibilitychange", () => {

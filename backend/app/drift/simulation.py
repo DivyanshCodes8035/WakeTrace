@@ -9,8 +9,10 @@ fabricates environmental data.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from importlib.metadata import version as package_version
+from statistics import median
 from typing import Any, Mapping, Sequence
 
 
@@ -238,5 +240,120 @@ def estimate_origin(
         "provenance": {
             "input_sources": [dict(source) for source in input_sources],
             "settings": settings,
+        },
+    }
+
+
+def simulate_forward_scenario(
+    slick_geometry: Mapping[str, Any],
+    start_at: str | datetime,
+    *,
+    readers: Sequence[Any],
+    forecast_hours: int = 36,
+    ensemble_size: int = 100,
+    wind_drift_factor: float = 0.02,
+    current_uncertainty: float = 0.1,
+    random_seed: int = 42,
+    loglevel: int = 50,
+) -> dict[str, Any]:
+    """Run an OpenOil forward ensemble with explicit forecast-forcing readers."""
+    _validate_geometry(slick_geometry)
+    start = _utc_datetime(start_at)
+    if not readers or not 6 <= forecast_hours <= 72 or ensemble_size < 10:
+        raise DriftInputError("Forward planning needs readers, a 6–72 hour horizon, and at least 10 particles.")
+    if not 0.005 <= wind_drift_factor <= 0.05 or not 0 <= current_uncertainty <= 1:
+        raise DriftInputError("Windage or current uncertainty is outside the supported scenario range.")
+    try:
+        from opendrift.models.openoil import OpenOil
+    except ImportError as exc:
+        raise RuntimeError("OpenDrift is not installed. Install backend/requirements.txt before planning coastal exposure.") from exc
+
+    model = OpenOil(loglevel=loglevel, seed=random_seed)
+    model.add_reader(list(readers))
+    model.set_config("seed:wind_drift_factor", wind_drift_factor)
+    model.set_config("drift:current_uncertainty", current_uncertainty)
+    # The forecast readers currently provide wind and current, not Stokes drift.
+    model.set_config("drift:stokes_drift", False)
+    model.set_config("general:coastline_action", "stranding")
+    feature = {
+        "type": "Feature",
+        "geometry": dict(slick_geometry),
+        "properties": {
+            "time": start.isoformat().replace("+00:00", "Z"),
+            "number": ensemble_size,
+            "oil_type": "GENERIC BUNKER C",
+            "wind_drift_factor": wind_drift_factor,
+        },
+    }
+    model.seed_from_geojson(json.dumps(feature))
+    model.run(
+        duration=timedelta(hours=forecast_hours),
+        time_step=900,
+        time_step_output=3600,
+    )
+
+    result = model.result
+    lons = result["lon"].transpose("time", "trajectory").values
+    lats = result["lat"].transpose("time", "trajectory").values
+    raw_times = result["time"].values
+    if lons.ndim != 2 or lats.shape != lons.shape or len(raw_times) != lons.shape[0]:
+        raise RuntimeError("OpenDrift returned an invalid forward ensemble shape.")
+
+    times: list[str] = []
+    for raw_time in raw_times:
+        try:
+            timestamp = datetime.fromtimestamp(
+                int(raw_time.astype("datetime64[s]").astype(int)), timezone.utc
+            ).isoformat(timespec="seconds").replace("+00:00", "Z")
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            timestamp = str(raw_time).replace(" ", "T")
+            if not timestamp.endswith("Z"):
+                timestamp += "Z"
+        times.append(timestamp)
+
+    particle_tracks = []
+    for particle_index in range(lons.shape[1]):
+        track = []
+        for frame_index, timestamp in enumerate(times):
+            lon, lat = float(lons[frame_index, particle_index]), float(lats[frame_index, particle_index])
+            if math.isfinite(lon) and math.isfinite(lat) and abs(lon) <= 180 and abs(lat) <= 90:
+                track.append({"time": timestamp, "coordinates": [lon, lat]})
+        if len(track) >= 2:
+            particle_tracks.append(track)
+    if not particle_tracks:
+        raise RuntimeError("OpenDrift returned no usable particle tracks for this forecast scenario.")
+
+    center_track = []
+    for frame_index, timestamp in enumerate(times):
+        valid = [
+            (float(lons[frame_index, particle]), float(lats[frame_index, particle]))
+            for particle in range(lons.shape[1])
+            if math.isfinite(float(lons[frame_index, particle])) and math.isfinite(float(lats[frame_index, particle]))
+            and abs(float(lons[frame_index, particle])) <= 180 and abs(float(lats[frame_index, particle])) <= 90
+        ]
+        if valid:
+            center_track.append({
+                "time": timestamp,
+                "coordinates": [median(p[0] for p in valid), median(p[1] for p in valid)],
+            })
+
+    return {
+        "track": center_track,
+        "particle_tracks": particle_tracks,
+        "particle_count_requested": ensemble_size,
+        "particle_count_returned": len(particle_tracks),
+        "settings": {
+            "model": f"OpenDrift OpenOil {package_version('opendrift')}",
+            "start_at": start.isoformat().replace("+00:00", "Z"),
+            "forecast_hours": forecast_hours,
+            "time_step_seconds": 900,
+            "time_step_output_seconds": 3600,
+            "wind_drift_factor": wind_drift_factor,
+            "current_uncertainty_mps": current_uncertainty,
+            "stokes_drift": False,
+            "coastline_action": "stranding",
+            "oil_type_assumption": "GENERIC BUNKER C",
+            "random_seed": random_seed,
+            "initialization": "particles seeded within selected possible slick GeoJSON",
         },
     }
