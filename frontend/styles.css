@@ -975,6 +975,7 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 650; }
 .coastal-line.central { border-color: #ffc86c; }
 .coastal-line.lower { border-color: #60d9ce; border-top-style: dashed; }
 .coastal-line.higher { border-color: #bca4ff; border-top-style: dashed; }
+.coastal-particle-lines { display: inline-block; width: 22px; border-top: 1px solid #63b9ad; opacity: .6; box-shadow: 0 3px 0 rgb(99 185 173 / 45%), 0 -3px 0 rgb(99 185 173 / 45%); }
 .coastal-site-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff8a72; box-shadow: 0 0 0 3px rgb(255 138 114 / 20%); }
 .coastal-plan-summary { margin: 14px 0 10px; padding: 14px; border-radius: 12px; background: rgb(3 18 31 / 62%); color: var(--ink-soft); }
 .coastal-plan-summary strong { color: var(--sea); }

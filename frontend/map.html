@@ -90,11 +90,11 @@
               <label>Scenario window<select id="coastal-forecast-hours"><option value="24">24 hours</option><option value="36" selected>36 hours</option><option value="48">48 hours</option><option value="72">72 hours</option></select></label>
               <button id="plan-coastal-impact" class="secondary-button" type="button">Plan possible coastal exposure</button>
             </div>
-            <div class="coastal-scenario-legend" aria-label="Forecast scenario legend"><span><i class="coastal-line central"></i>Central</span><span><i class="coastal-line lower"></i>Lower windage</span><span><i class="coastal-line higher"></i>Higher windage</span><span><i class="coastal-site-dot"></i>Mapped coastal place</span></div>
+            <div class="coastal-scenario-legend" aria-label="Forecast scenario legend"><span><i class="coastal-line central"></i>Central ensemble median</span><span><i class="coastal-line lower"></i>Lower windage</span><span><i class="coastal-line higher"></i>Higher windage / wider spread</span><span><i class="coastal-particle-lines"></i>Individual oil particles</span><span><i class="coastal-site-dot"></i>Mapped coastal place</span></div>
             <p id="coastal-plan-status" class="upload-status" role="status" aria-live="polite">Uses a what-if forecast from the selected radar feature. It does not confirm oil or predict a real impact.</p>
             <div id="coastal-plan-summary" class="coastal-plan-summary" hidden></div>
             <div id="coastal-site-list" class="coastal-site-list"></div>
-            <p class="coastal-source-note"><strong>Coastal data:</strong> OpenStreetMap community-mapped reefs, wetlands/mangroves, beaches, and protected areas. NOAA ESI coverage is not confirmed for this location. Mapped places may be incomplete or outdated; no result does not mean no sensitive place exists. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap attribution</a>.</p>
+            <p class="coastal-source-note"><strong>Coastal data:</strong> UNEP-WCMC / IUCN Protected Planet polygons plus OpenStreetMap community-mapped reefs, wetlands/mangroves, and beaches. NOAA ESI coverage is not confirmed for this location. Mapped places may be incomplete or outdated; no result does not mean no sensitive place exists. <a href="https://www.protectedplanet.net/" target="_blank" rel="noreferrer">Protected Planet</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap attribution</a>.</p>
           </section>
           <div id="real-ais-auto" class="scene-search-form" hidden>
             <h3>Automatic AIS presence search</h3>

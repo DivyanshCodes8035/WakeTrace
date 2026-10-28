@@ -51,11 +51,6 @@ def _meters_per_degree(latitude: float) -> tuple[float, float]:
     return 111_195.0 * max(0.15, math.cos(math.radians(latitude))), 111_195.0
 
 
-def _advance(lon: float, lat: float, east_mps: float, north_mps: float, hours: float) -> tuple[float, float]:
-    m_lon, m_lat = _meters_per_degree(lat)
-    return lon + east_mps * 3600 * hours / m_lon, lat + north_mps * 3600 * hours / m_lat
-
-
 def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     lon1, lat1, lon2, lat2 = map(math.radians, (*a, *b))
     dlat, dlon = lat2 - lat1, lon2 - lon1
@@ -142,15 +137,6 @@ def _element_feature(element: dict[str, Any]) -> tuple[dict[str, Any], list[tupl
     return feature, coords
 
 
-async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any]) -> dict[str, Any]:
-    response = await client.get(url, params=params)
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict) or payload.get("error"):
-        raise RuntimeError("A public forecast provider returned an invalid response.")
-    return payload
-
-
 async def _get_coastal_features(client: httpx.AsyncClient, bounds: tuple[float, float, float, float]) -> tuple[list[dict[str, Any]], str | None]:
     west, south, east, north = bounds
     bbox = f"{south:.5f},{west:.5f},{north:.5f},{east:.5f}"
@@ -200,7 +186,7 @@ async def _get_protected_areas(client: httpx.AsyncClient, bounds: tuple[float, f
         geometry = item.get("geometry")
         if not isinstance(geometry, dict):
             continue
-        kind, order = _category({"boundary": "protected_area"})
+        _, order = _category({"boundary": "protected_area"})
         features.append({
             "type": "Feature",
             "id": "wdpa/" + str(properties.get("site_pid") or properties.get("site_id") or len(features)),
@@ -240,11 +226,21 @@ def _geometry_paths(geometry: dict[str, Any]) -> list[list[tuple[float, float]]]
     return []
 
 
+def _inside_polygon(point: tuple[float, float], geometry: dict[str, Any]) -> bool:
+    kind = geometry.get("type")
+    coordinates = geometry.get("coordinates", [])
+    polygons = [coordinates] if kind == "Polygon" else coordinates if kind == "MultiPolygon" else []
+    for polygon in polygons:
+        rings = [[(float(p[0]), float(p[1])) for p in ring] for ring in polygon if ring]
+        if rings and _inside_ring(point, rings[0]) and not any(_inside_ring(point, ring) for ring in rings[1:]):
+            return True
+    return False
+
+
 def _distance_to_feature(track: list[dict[str, Any]], geometry: dict[str, Any]) -> tuple[float, list[str]]:
     best = math.inf
     near_times = []
     paths = _geometry_paths(geometry)
-    outer_ring = paths[0] if geometry.get("type") in {"Polygon", "MultiPolygon"} and paths else []
     for frame in track:
         point = tuple(frame["coordinates"])
         distance = min((
@@ -253,7 +249,7 @@ def _distance_to_feature(track: list[dict[str, Any]], geometry: dict[str, Any]) 
             min(_point_segment_distance_km(point, path[index - 1], path[index]) for index in range(1, len(path)))
             for path in paths if path
         ), default=math.inf)
-        if outer_ring and _inside_ring(point, outer_ring):
+        if _inside_polygon(point, geometry):
             distance = 0.0
         best = min(best, distance)
         if distance <= 10:
@@ -278,8 +274,6 @@ async def create_impact_plan(geometry: dict[str, Any], forecast_hours: int = 36)
     ]
 
     def run_ensembles() -> tuple[list[dict[str, Any]], list[dict[str, Any]], datetime, dict[str, Any]]:
-        import numpy as np
-
         with tempfile.TemporaryDirectory(prefix="waketrace-coastal-forcing-") as directory:
             readers, input_sources, start_at, metadata = fetch_forecast_readers(
                 geometry=geometry, forecast_hours=forecast_hours, output_directory=Path(directory),

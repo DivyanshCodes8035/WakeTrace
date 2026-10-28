@@ -4,7 +4,7 @@ This file tracks proposed work and implementation status.
 
 ## Next implementation priority — Monday, 26 October 2026
 
-**Status: prototype implemented.** The planner builds a forecast what-if envelope and queries nearby OpenStreetMap coastal features, recording source and uncertainty details. NOAA's [published ESI availability catalog](https://response.restoration.noaa.gov/download-esi-maps-and-gis-data) does not list Mauritius, the project's demonstration area, so this build does not claim or draw NOAA ESI coverage there. If a future demonstration area has NOAA ESI coverage, verify the exact atlas and date before using it; otherwise continue to show the actual alternative dataset and any coverage gaps.
+**Status: prototype implemented.** The planner runs OpenDrift OpenOil forecast ensembles and queries nearby UNEP-WCMC/IUCN Protected Planet marine/coastal polygons plus OpenStreetMap coastal features, recording source and uncertainty details. NOAA's [published ESI availability catalog](https://response.restoration.noaa.gov/download-esi-maps-and-gis-data) does not list Mauritius, the project's demonstration area, so this build does not claim or draw NOAA ESI coverage there. If a future demonstration area has NOAA ESI coverage, verify the exact atlas and date before using it; otherwise continue to show the actual alternative dataset and any coverage gaps.
 
 ## 1. Coastal Impact Planner — prototype implemented; validation and richer data coverage remain
 
